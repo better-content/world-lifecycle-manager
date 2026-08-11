@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": ["RBR", "BOB", "RBR"],
+  "key": {
+    "R": { "item": "bloodmagic:reinforcedslate" },
+    "B": { "item": "create:brass_sheet" },
+    "O": { "item": "minecraft:obsidian" }
+  },
+  "result": { "item": "prestige:world_condenser_hull", "count": 4 },
+  "show_notification": true
+}

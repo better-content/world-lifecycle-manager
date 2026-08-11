@@ -1,0 +1,8 @@
+.gradle/
+build/
+run/
+run-gametest/
+out/
+*.log
+logs/
+

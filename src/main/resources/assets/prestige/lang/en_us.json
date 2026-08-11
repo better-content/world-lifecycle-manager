@@ -1,0 +1,8 @@
+{
+  "block.prestige.world_condenser_hull": "World Condenser Hull",
+  "block.prestige.world_condenser_interface": "World Condenser Interface",
+  "screen.prestige.world_condenser": "World Condenser",
+  "message.prestige.condenser_attuned": "The World Condenser accepts the Apprentice Blood Orb's signature.",
+  "message.prestige.condenser_needs_orb": "Attune the Interface with a bound Apprentice Blood Orb.",
+  "message.prestige.condenser_unformed": "Requires a hollow 3x3x3 shell: 25 Hulls and one outward-facing Interface."
+}
