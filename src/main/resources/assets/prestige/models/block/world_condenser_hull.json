@@ -1,4 +1,4 @@
 {
   "parent": "minecraft:block/cube_all",
-  "textures": { "all": "minecraft:block/crying_obsidian" }
+  "textures": { "all": "prestige:block/world_condenser_hull" }
 }

@@ -1,8 +1,8 @@
 {
   "parent": "minecraft:block/cube_bottom_top",
   "textures": {
-    "bottom": "minecraft:block/crying_obsidian",
-    "top": "minecraft:block/respawn_anchor_top",
-    "side": "minecraft:block/respawn_anchor_side4"
+    "bottom": "prestige:block/world_condenser_hull",
+    "top": "prestige:block/world_condenser_interface_top",
+    "side": "prestige:block/world_condenser_interface_side"
   }
 }
