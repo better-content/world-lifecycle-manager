@@ -53,6 +53,19 @@ public final class PrestigeCoordinator {
                         .then(Commands.argument("player", EntityArgument.player()).requires(source -> source.hasPermission(4))
                                 .then(Commands.argument("tab", StringArgumentType.word()).executes(context -> openGui(
                                         EntityArgument.getPlayer(context, "player"), tab(StringArgumentType.getString(context, "tab")))))))
+                .then(Commands.literal("select").requires(source -> source.hasPermission(4))
+                        .then(Commands.argument("biome", StringArgumentType.word()).executes(context -> {
+                            try {
+                                String biome = StringArgumentType.getString(context, "biome");
+                                PrestigeService.saveDraft(context.getSource().getServer(), biome, "Operator");
+                                context.getSource().sendSuccess(() -> Component.literal(
+                                        "Selected Prestige biome " + biome + "; stage with /prestige stage"), true);
+                                return 1;
+                            } catch (Exception error) {
+                                context.getSource().sendFailure(Component.literal("Prestige selection failed: " + error.getMessage()));
+                                return 0;
+                            }
+                        })))
                 .then(Commands.literal("stage").requires(source -> source.hasPermission(4))
                         .executes(context -> {
                             try {
