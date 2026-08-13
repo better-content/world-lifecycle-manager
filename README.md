@@ -1,4 +1,4 @@
-# Prestige
+# World Lifecycle Manager
 
 Prestige is the Better Content Forge 1.20.1 mod for verified dedicated-server world resets, cold archives, rollback, World Condenser control, and the persistent lineage schematic library.
 
@@ -20,3 +20,7 @@ The matching pack repository is [better-content/better-content](https://github.c
 
 Prestige is licensed under the GNU Affero General Public License version 3 or later. See `LICENSE`.
 
+
+## Identity
+
+The clean-break canonical identity is repository/artifact `world-lifecycle-manager`, mod ID and resource namespace `world_lifecycle_manager`, and Maven group `com.bettercontent`. Legacy `prestige` identifiers and persisted paths are not migrated.

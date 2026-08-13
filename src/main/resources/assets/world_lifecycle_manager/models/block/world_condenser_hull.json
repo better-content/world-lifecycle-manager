@@ -1,0 +1,4 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": { "all": "world_lifecycle_manager:block/world_condenser_hull" }
+}

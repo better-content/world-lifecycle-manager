@@ -5,4 +5,4 @@ pluginManagement {
         mavenCentral()
     }
 }
-rootProject.name = "prestige"
+rootProject.name = "world-lifecycle-manager"

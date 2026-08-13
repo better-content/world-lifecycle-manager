@@ -1,0 +1,5 @@
+{
+  "multipart": [
+    { "apply": { "model": "world_lifecycle_manager:block/world_condenser_interface" } }
+  ]
+}

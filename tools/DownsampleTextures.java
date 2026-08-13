@@ -20,7 +20,7 @@ public final class DownsampleTextures {
     public static void main(String[] args) throws IOException {
         Path project = Path.of("").toAbsolutePath();
         Path sourceDir = project.resolve("art/source-textures");
-        Path outputDir = project.resolve("src/main/resources/assets/prestige/textures/block");
+        Path outputDir = project.resolve("src/main/resources/assets/world_lifecycle_manager/textures/block");
         Path previewDir = project.resolve("build/texture-previews");
         Files.createDirectories(outputDir);
         Files.createDirectories(previewDir);

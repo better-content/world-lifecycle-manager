@@ -1,8 +1,0 @@
-{
-  "parent": "minecraft:block/cube_bottom_top",
-  "textures": {
-    "bottom": "prestige:block/world_condenser_hull",
-    "top": "prestige:block/world_condenser_interface_top",
-    "side": "prestige:block/world_condenser_interface_side"
-  }
-}

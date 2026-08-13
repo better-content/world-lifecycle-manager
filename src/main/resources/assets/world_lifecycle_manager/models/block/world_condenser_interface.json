@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "bottom": "world_lifecycle_manager:block/world_condenser_hull",
+    "top": "world_lifecycle_manager:block/world_condenser_interface_top",
+    "side": "world_lifecycle_manager:block/world_condenser_interface_side"
+  }
+}

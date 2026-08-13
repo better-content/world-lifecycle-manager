@@ -8,7 +8,7 @@ plugins {
 group = property("mod_group_id") as String
 version = property("mod_version") as String
 
-base { archivesName.set(property("mod_id") as String) }
+base { archivesName.set("world-lifecycle-manager") }
 java { toolchain.languageVersion.set(JavaLanguageVersion.of(17)) }
 
 minecraft {

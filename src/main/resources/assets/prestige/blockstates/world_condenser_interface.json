@@ -1,5 +1,0 @@
-{
-  "multipart": [
-    { "apply": { "model": "prestige:block/world_condenser_interface" } }
-  ]
-}

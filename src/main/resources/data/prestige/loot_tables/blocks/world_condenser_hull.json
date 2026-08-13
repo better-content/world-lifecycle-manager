@@ -1,8 +1,0 @@
-{
-  "type": "minecraft:block",
-  "pools": [{
-    "rolls": 1,
-    "entries": [{ "type": "minecraft:item", "name": "prestige:world_condenser_hull" }],
-    "conditions": [{ "condition": "minecraft:survives_explosion" }]
-  }]
-}

@@ -1,9 +1,0 @@
-{
-  "type": "bloodmagic:altar",
-  "altarSyphon": 20000,
-  "consumptionRate": 40,
-  "drainRate": 40,
-  "input": { "item": "prestige:world_condenser_hull" },
-  "output": { "item": "prestige:world_condenser_interface" },
-  "upgradeLevel": 1
-}

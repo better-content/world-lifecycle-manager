@@ -1,0 +1,8 @@
+{
+  "block.world_lifecycle_manager.world_condenser_hull": "World Condenser Hull",
+  "block.world_lifecycle_manager.world_condenser_interface": "World Condenser Interface",
+  "screen.world_lifecycle_manager.world_condenser": "World Condenser",
+  "message.world_lifecycle_manager.condenser_attuned": "The World Condenser accepts the Apprentice Blood Orb's signature.",
+  "message.world_lifecycle_manager.condenser_needs_orb": "Attune the Interface with a bound Apprentice Blood Orb.",
+  "message.world_lifecycle_manager.condenser_unformed": "Requires a hollow 3x3x3 shell: 25 Hulls and one outward-facing Interface."
+}

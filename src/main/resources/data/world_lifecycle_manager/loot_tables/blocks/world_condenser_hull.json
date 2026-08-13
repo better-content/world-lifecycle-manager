@@ -1,0 +1,8 @@
+{
+  "type": "minecraft:block",
+  "pools": [{
+    "rolls": 1,
+    "entries": [{ "type": "minecraft:item", "name": "world_lifecycle_manager:world_condenser_hull" }],
+    "conditions": [{ "condition": "minecraft:survives_explosion" }]
+  }]
+}
