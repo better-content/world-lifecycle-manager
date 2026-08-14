@@ -1,0 +1,1 @@
+{"type":"world_lifecycle_manager:schematic_minting","ingredients":[{"item":"create:empty_schematic"},{"tag":"forge:feathers"},{"tag":"forge:dyes/black"}],"result":{"item":"create:schematic_and_quill"}}

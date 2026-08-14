@@ -1,4 +1,4 @@
 {
   "replace": false,
-  "values": ["world_lifecycle_manager:world_condenser_hull", "world_lifecycle_manager:world_condenser_interface"]
+  "values": ["world_lifecycle_manager:world_condenser_hull", "world_lifecycle_manager:world_condenser_interface", "world_lifecycle_manager:schematic_mint"]
 }

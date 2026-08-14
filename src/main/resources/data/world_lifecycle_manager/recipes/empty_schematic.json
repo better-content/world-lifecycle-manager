@@ -1,0 +1,1 @@
+{"type":"world_lifecycle_manager:schematic_minting","ingredients":[{"item":"minecraft:paper"},{"tag":"forge:dyes/light_blue"}],"result":{"item":"create:empty_schematic"}}

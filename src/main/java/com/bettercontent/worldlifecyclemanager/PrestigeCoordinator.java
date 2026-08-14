@@ -19,6 +19,7 @@ import net.minecraft.world.level.storage.LevelResource;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.server.ServerStartedEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.nio.file.Files;
@@ -31,6 +32,13 @@ public final class PrestigeCoordinator {
     private PrestigeCoordinator() {}
 
     public static void scheduleStop() { stopCountdown = 20; }
+
+    @SubscribeEvent public static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) PrestigeNetwork.sendManifest(player);
+    }
+    @SubscribeEvent public static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) PrestigeNetwork.cancelSync(player);
+    }
 
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
@@ -118,6 +126,7 @@ public final class PrestigeCoordinator {
     @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
         MinecraftServer server = event.getServer();
+        PrestigeNetwork.tickSync(server);
         Path successorPath = PrestigeService.control(server).resolve("successor-request-v4.tsv");
         if (!Files.isRegularFile(successorPath)) return;
         try {

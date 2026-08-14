@@ -15,11 +15,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
 public final class PrestigeNetwork {
-    private static final String VERSION = "2";
+    private static final String VERSION = "3";
     private static final int REFRESH_CACHE_TICKS = 10;
     private static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(new ResourceLocation(PrestigeMod.MOD_ID, "world_lifecycle_manager"))
@@ -28,6 +31,7 @@ public final class PrestigeNetwork {
     private static int discriminator;
     private static final Map<ServerPlayer, CachedState> STATE_CACHE = new WeakHashMap<>();
     private static final Map<ServerPlayer, Long> LAST_PHYSICAL_OPEN = new WeakHashMap<>();
+    private static final Map<UUID, SyncBatch> SYNC_QUEUES = new java.util.HashMap<>();
 
     private PrestigeNetwork() {}
 
@@ -38,10 +42,39 @@ public final class PrestigeNetwork {
                 .encoder(StatePacket::encode).decoder(StatePacket::decode).consumerMainThread(StatePacket::handle).add();
         CHANNEL.messageBuilder(DownloadPacket.class, discriminator++, NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(DownloadPacket::encode).decoder(DownloadPacket::decode).consumerMainThread(DownloadPacket::handle).add();
+        CHANNEL.messageBuilder(SyncManifestPacket.class, discriminator++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(SyncManifestPacket::encode).decoder(SyncManifestPacket::decode).consumerMainThread(SyncManifestPacket::handle).add();
+        CHANNEL.messageBuilder(SyncRequestPacket.class, discriminator++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(SyncRequestPacket::encode).decoder(SyncRequestPacket::decode).consumerMainThread(SyncRequestPacket::handle).add();
     }
 
     public static void sendAction(Action action, BlockPos pos, String value) {
         CHANNEL.sendToServer(new ActionPacket(action, pos, value));
+    }
+    public static void requestAutomaticSync(List<String> ids) { CHANNEL.sendToServer(new SyncRequestPacket(ids)); }
+    public static void sendManifest(ServerPlayer player) {
+        try {
+            List<ClientEntry> entries = SchematicLibrary.list(player.server).stream().map(entry -> new ClientEntry(
+                    entry.id(), entry.author(), entry.originalName(), entry.size(), entry.sha256())).toList();
+            CHANNEL.sendTo(new SyncManifestPacket(entries), player.connection.connection, NetworkDirection.PLAY_TO_CLIENT);
+        } catch (Exception error) { PrestigeMod.LOGGER.warn("Could not build schematic manifest for {}: {}", player.getScoreboardName(), error.getMessage()); }
+    }
+    public static void cancelSync(ServerPlayer player) { SYNC_QUEUES.remove(player.getUUID()); }
+    public static void tickSync(net.minecraft.server.MinecraftServer server) {
+        for (var iterator = SYNC_QUEUES.entrySet().iterator(); iterator.hasNext();) {
+            var queued = iterator.next();
+            ServerPlayer player = server.getPlayerList().getPlayer(queued.getKey());
+            SyncBatch batch = queued.getValue();
+            if (player == null || batch.entries.isEmpty()) { iterator.remove(); continue; }
+            SchematicLibrary.Entry entry = batch.entries.removeFirst();
+            int ordinal = ++batch.sent;
+            try {
+                byte[] data = SchematicLibrary.download(server, entry.id());
+                CHANNEL.sendTo(new DownloadPacket(entry.author(), entry.originalName(), entry.sha256(), data, true, ordinal, batch.total),
+                        player.connection.connection, NetworkDirection.PLAY_TO_CLIENT);
+            } catch (Exception error) { PrestigeMod.LOGGER.warn("Automatic schematic sync failed for {}: {}", player.getScoreboardName(), error.getMessage()); }
+            if (batch.entries.isEmpty()) iterator.remove();
+        }
     }
 
     public static boolean allowPhysicalOpen(ServerPlayer player) {
@@ -129,7 +162,7 @@ public final class PrestigeNetwork {
                                 .filter(candidate -> candidate.id().equals(packet.value)).findFirst()
                                 .orElseThrow(() -> new IllegalArgumentException("unknown schematic entry"));
                         byte[] data = SchematicLibrary.download(player.server, entry.id());
-                        CHANNEL.sendTo(new DownloadPacket(entry.author(), entry.originalName(), entry.sha256(), data),
+                        CHANNEL.sendTo(new DownloadPacket(entry.author(), entry.originalName(), entry.sha256(), data, false, 1, 1),
                                 player.connection.connection, NetworkDirection.PLAY_TO_CLIENT);
                     }
                     case REMOVE -> PrestigeService.remove(player, packet.value);
@@ -208,18 +241,46 @@ public final class PrestigeNetwork {
         return List.copyOf(result);
     }
 
-    public record DownloadPacket(String author, String name, String sha256, byte[] data) {
+    public record SyncManifestPacket(List<ClientEntry> entries) {
+        static void encode(SyncManifestPacket packet, FriendlyByteBuf buffer) {
+            PrestigeLimits.requireSize("schematic manifest", packet.entries, SchematicLibrary.MAX_PUBLISHED);
+            buffer.writeCollection(packet.entries, (out, entry) -> { out.writeUtf(entry.id, 64); out.writeUtf(entry.author, 32); out.writeUtf(entry.name, 256); out.writeLong(entry.size); out.writeUtf(entry.sha256, 64); });
+        }
+        static SyncManifestPacket decode(FriendlyByteBuf buffer) { return new SyncManifestPacket(readBounded(buffer, SchematicLibrary.MAX_PUBLISHED,
+                in -> new ClientEntry(in.readUtf(64), in.readUtf(32), in.readUtf(256), in.readLong(), in.readUtf(64)))); }
+        static void handle(SyncManifestPacket packet, Supplier<NetworkEvent.Context> supplier) { supplier.get().setPacketHandled(true); PrestigeClientState.acceptManifest(packet.entries); }
+    }
+    public record SyncRequestPacket(List<String> ids) {
+        static void encode(SyncRequestPacket packet, FriendlyByteBuf buffer) { PrestigeLimits.requireSize("schematic request", packet.ids, SchematicLibrary.MAX_PUBLISHED); buffer.writeCollection(packet.ids, (out, id) -> out.writeUtf(id, 64)); }
+        static SyncRequestPacket decode(FriendlyByteBuf buffer) { return new SyncRequestPacket(readBounded(buffer, SchematicLibrary.MAX_PUBLISHED, in -> in.readUtf(64))); }
+        static void handle(SyncRequestPacket packet, Supplier<NetworkEvent.Context> supplier) {
+            NetworkEvent.Context context = supplier.get(); context.setPacketHandled(true); ServerPlayer player = context.getSender(); if (player == null) return;
+            HashSet<String> requested = new HashSet<>(packet.ids);
+            ArrayDeque<SchematicLibrary.Entry> queue = new ArrayDeque<>();
+            try { SchematicLibrary.list(player.server).stream().filter(entry -> requested.contains(entry.id())).forEach(queue::add); }
+            catch (Exception error) { PrestigeMod.LOGGER.warn("Could not queue schematic sync for {}: {}", player.getScoreboardName(), error.getMessage()); return; }
+            if (!queue.isEmpty()) SYNC_QUEUES.put(player.getUUID(), new SyncBatch(queue));
+        }
+    }
+    public record DownloadPacket(String author, String name, String sha256, byte[] data, boolean automatic, int ordinal, int total) {
         static void encode(DownloadPacket packet, FriendlyByteBuf buffer) {
             buffer.writeUtf(packet.author, 32); buffer.writeUtf(packet.name, 256); buffer.writeUtf(packet.sha256, 64);
-            buffer.writeByteArray(packet.data);
+            buffer.writeByteArray(packet.data); buffer.writeBoolean(packet.automatic); buffer.writeVarInt(packet.ordinal); buffer.writeVarInt(packet.total);
         }
         static DownloadPacket decode(FriendlyByteBuf buffer) {
             return new DownloadPacket(buffer.readUtf(32), buffer.readUtf(256), buffer.readUtf(64),
-                    buffer.readByteArray((int) SchematicLibrary.MAX_BYTES));
+                    buffer.readByteArray((int) SchematicLibrary.MAX_BYTES), buffer.readBoolean(), buffer.readVarInt(), buffer.readVarInt());
         }
         static void handle(DownloadPacket packet, Supplier<NetworkEvent.Context> supplier) {
             supplier.get().setPacketHandled(true);
             PrestigeClientState.saveDownload(packet);
         }
+    }
+
+    private static final class SyncBatch {
+        private final ArrayDeque<SchematicLibrary.Entry> entries;
+        private final int total;
+        private int sent;
+        private SyncBatch(ArrayDeque<SchematicLibrary.Entry> entries) { this.entries = entries; this.total = entries.size(); }
     }
 }

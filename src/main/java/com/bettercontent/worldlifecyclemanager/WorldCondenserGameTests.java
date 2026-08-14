@@ -26,6 +26,39 @@ import java.util.stream.IntStream;
 public final class WorldCondenserGameTests {
     private WorldCondenserGameTests() {}
 
+    @GameTest(templateNamespace = PrestigeMod.MOD_ID, template = "empty", timeoutTicks = 100)
+    public static void schematicMintCreatesPersistentInventory(final GameTestHelper helper) {
+        BlockPos pos = helper.absolutePos(new BlockPos(2, 2, 2));
+        helper.getLevel().setBlockAndUpdate(pos, PrestigeRegistry.SCHEMATIC_MINT.get().defaultBlockState());
+        if (!(helper.getLevel().getBlockEntity(pos) instanceof SchematicMintBlockEntity mint)) {
+            helper.fail("Schematic Mint did not create its block entity"); return;
+        }
+        mint.setItem(0, new ItemStack(net.minecraft.world.item.Items.PAPER));
+        CompoundTag saved = mint.saveWithFullMetadata();
+        SchematicMintBlockEntity restored = new SchematicMintBlockEntity(pos, PrestigeRegistry.SCHEMATIC_MINT.get().defaultBlockState());
+        restored.load(saved);
+        if (restored.getItem(0).getItem() != net.minecraft.world.item.Items.PAPER) {
+            helper.fail("Schematic Mint input did not survive NBT persistence"); return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = PrestigeMod.MOD_ID, template = "empty", timeoutTicks = 100)
+    public static void schematicMintRecipesAreShapelessAndExact(final GameTestHelper helper) {
+        net.minecraft.world.SimpleContainer input = new net.minecraft.world.SimpleContainer(3);
+        input.setItem(0, new ItemStack(net.minecraft.world.item.Items.LIGHT_BLUE_DYE));
+        input.setItem(2, new ItemStack(net.minecraft.world.item.Items.PAPER));
+        var recipe = helper.getLevel().getRecipeManager().getRecipeFor(PrestigeRegistry.SCHEMATIC_MINTING.get(), input, helper.getLevel());
+        if (recipe.isEmpty() || !recipe.get().getId().toString().equals("world_lifecycle_manager:empty_schematic")) {
+            helper.fail("Schematic Mint did not match its shapeless empty-schematic recipe"); return;
+        }
+        input.setItem(1, new ItemStack(net.minecraft.world.item.Items.FEATHER));
+        if (helper.getLevel().getRecipeManager().getRecipeFor(PrestigeRegistry.SCHEMATIC_MINTING.get(), input, helper.getLevel()).isPresent()) {
+            helper.fail("Schematic Mint accepted an unrelated extra ingredient"); return;
+        }
+        helper.succeed();
+    }
+
     @GameTest(templateNamespace = PrestigeMod.MOD_ID, template = "empty", timeoutTicks = 200)
     public static void formationAndAttunementAreValidated(final GameTestHelper helper) {
         BlockPos center = helper.absolutePos(new BlockPos(2, 2, 2));
@@ -138,6 +171,15 @@ public final class WorldCondenserGameTests {
         } finally {
             oversized.release();
         }
+        var manifest = new PrestigeNetwork.SyncManifestPacket(List.of(new PrestigeNetwork.ClientEntry(
+                "entry", "Builder", "plan.nbt", 12, "a".repeat(64))));
+        FriendlyByteBuf manifestRoundTrip = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            PrestigeNetwork.SyncManifestPacket.encode(manifest, manifestRoundTrip);
+            if (!manifest.equals(PrestigeNetwork.SyncManifestPacket.decode(manifestRoundTrip))) {
+                helper.fail("Schematic sync manifest failed a round trip"); return;
+            }
+        } finally { manifestRoundTrip.release(); }
         helper.succeed();
     }
 
