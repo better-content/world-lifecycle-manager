@@ -59,6 +59,39 @@ public final class WorldCondenserGameTests {
         helper.succeed();
     }
 
+    @GameTest(templateNamespace = PrestigeMod.MOD_ID, template = "empty", timeoutTicks = 100)
+    public static void schematicMintHasMechanicalCraftingRecipe(final GameTestHelper helper) {
+        ResourceLocation recipeId = new ResourceLocation(PrestigeMod.MOD_ID, "schematic_mint");
+        var loaded = helper.getLevel().getRecipeManager().byKey(recipeId);
+        if (loaded.isEmpty()) {
+            helper.fail("Schematic Mint mechanical-crafting recipe was not loaded"); return;
+        }
+        var recipe = loaded.get();
+        ResourceLocation typeId = ForgeRegistries.RECIPE_TYPES.getKey(recipe.getType());
+        if (!new ResourceLocation("create", "mechanical_crafting").equals(typeId)) {
+            helper.fail("Schematic Mint recipe did not use Create mechanical crafting"); return;
+        }
+        var ingredients = recipe.getIngredients();
+        if (ingredients.size() != 9) {
+            helper.fail("Schematic Mint recipe did not occupy a full 3x3 grid"); return;
+        }
+        String[] expected = {
+                "create:brass_sheet", "create:cogwheel", "create:brass_sheet",
+                "create:cogwheel", "create:brass_casing", "create:cogwheel",
+                "create:brass_sheet", "create:cogwheel", "create:brass_sheet"
+        };
+        for (int index = 0; index < expected.length; index++) {
+            var item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(expected[index]));
+            if (item == null || !ingredients.get(index).test(new ItemStack(item))) {
+                helper.fail("Schematic Mint recipe ingredient mismatch at slot " + index); return;
+            }
+        }
+        if (!recipe.getResultItem(helper.getLevel().registryAccess()).is(PrestigeRegistry.SCHEMATIC_MINT_ITEM.get())) {
+            helper.fail("Schematic Mint recipe produced the wrong item"); return;
+        }
+        helper.succeed();
+    }
+
     @GameTest(templateNamespace = PrestigeMod.MOD_ID, template = "empty", timeoutTicks = 200)
     public static void formationAndAttunementAreValidated(final GameTestHelper helper) {
         BlockPos center = helper.absolutePos(new BlockPos(2, 2, 2));
