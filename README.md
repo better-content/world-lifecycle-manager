@@ -2,6 +2,8 @@
 
 World Lifecycle Manager is the Better Content Forge 1.20.1 mod for verified dedicated-server world resets, cold archives, rollback, World Condenser control, and the persistent lineage schematic library.
 
+The World Condenser also exposes a six-node, operator-controlled world-shaping perk tree. Each upcoming prestige supplies one point. Operators may respec before staging, while the staged build is transactionally bound to the successor and only becomes active after verified lineage advancement. Perks expand biome choices, improve or redirect spawn placement, add a fallback biome, and optionally authorize a fourth successor attempt; they never grant player inventory or disable lineage schematics.
+
 ## Development
 
 Java 17 is required. The checked-in Gradle wrapper provides the supported build and validation entrypoints:

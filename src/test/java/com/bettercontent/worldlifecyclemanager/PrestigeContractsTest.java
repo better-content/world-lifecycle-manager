@@ -53,6 +53,11 @@ class PrestigeContractsTest {
                 + "lineage\tlineage-abc\nbase_generation\t0\ntarget_generation\t1\n"
                 + "transaction\ttransaction-abc\nsuccessor_seed\t7\n"
                 + "biome\tminecraft:plains\nattempt\t4\n");
+        assertEquals(4, PrestigeContracts.readSuccessor(successor).attempt());
+        Files.writeString(successor, PrestigeContracts.SUCCESSOR_MAGIC + "\n"
+                + "lineage\tlineage-abc\nbase_generation\t0\ntarget_generation\t1\n"
+                + "transaction\ttransaction-abc\nsuccessor_seed\t7\n"
+                + "biome\tminecraft:plains\nattempt\t5\n");
         assertThrows(IllegalArgumentException.class, () -> PrestigeContracts.readSuccessor(successor));
 
         Path active = temp.resolve("active-successor.tsv");

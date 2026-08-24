@@ -3,6 +3,7 @@ package com.bettercontent.worldlifecyclemanager;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -46,15 +47,17 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
         }
         int x = leftPos + 10;
         addRenderableWidget(tabButton("Reset", x, 30, 0));
-        addRenderableWidget(tabButton("Schematics", x + 92, 30, 1));
+        addRenderableWidget(tabButton("Schematics", x + 96, 30, 1));
+        addRenderableWidget(tabButton("Perks", x + 192, 30, 2));
         if (tab == 0) rebuildReset(state, x);
-        else rebuildSchematics(state, x);
+        else if (tab == 1) rebuildSchematics(state, x);
+        else rebuildPerks(state, x);
     }
 
     private Button tabButton(String label, int x, int y, int value) {
         return Button.builder(Component.literal((tab == value ? "> " : "") + label), button -> {
             switchTab(value);
-        }).bounds(x, topPos + y, 84, 20).build();
+        }).bounds(x, topPos + y, 90, 20).build();
     }
 
     private void rebuildReset(PrestigeNetwork.StatePacket state, int x) {
@@ -69,6 +72,26 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
         addRenderableWidget(biome);
         y += 26;
         if (state.operator()) {
+            if (state.perks().contains("settled_arrival")) {
+                addRenderableWidget(Button.builder(Component.literal("Landing: " + state.landing()), button ->
+                        PrestigeNetwork.sendAction(PrestigeNetwork.Action.SET_LANDING, actionPos(),
+                                state.landing().equals("village") ? "biome" : "village"))
+                        .bounds(x, y, width, 20).build());
+                y += 24;
+            }
+            if (state.perks().contains("fallback_attunement") && state.landing().equals("biome")) {
+                String fallback = state.fallback().isEmpty() ? "none" : shortText(state.fallback(), 34);
+                addRenderableWidget(Button.builder(Component.literal("Fallback: " + fallback), button -> {
+                    int index = state.fallback().isEmpty() ? -1 : state.biomes().indexOf(state.fallback());
+                    String next = state.biomes().get((index + 1) % state.biomes().size());
+                    if (next.equals(state.selectedBiome())) next = state.biomes().get((index + 2) % state.biomes().size());
+                    PrestigeNetwork.sendAction(PrestigeNetwork.Action.SET_FALLBACK, actionPos(), next);
+                }).bounds(x, y, 240, 20).build());
+                addRenderableWidget(Button.builder(Component.literal("Clear"), button ->
+                        PrestigeNetwork.sendAction(PrestigeNetwork.Action.SET_FALLBACK, actionPos(), "clear"))
+                        .bounds(x + 246, y, 54, 20).build());
+                y += 24;
+            }
             Button stage = Button.builder(Component.literal("Stage reset"), button ->
                     PrestigeNetwork.sendAction(PrestigeNetwork.Action.STAGE, actionPos(), ""))
                     .bounds(x, y, 88, 20).build();
@@ -91,6 +114,37 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
             addRenderableWidget(Button.builder(Component.literal("Open schematics"), button -> switchTab(1))
                     .bounds(x, topPos + 190, width, 20).build());
         }
+    }
+
+    private void rebuildPerks(PrestigeNetwork.StatePacket state, int x) {
+        String[][] branches = {
+                {"expanded_attunement", "Expanded Attunement", "frontier_attunement", "Frontier Attunement"},
+                {"safe_arrival", "Safe Arrival", "settled_arrival", "Settled Arrival"},
+                {"fallback_attunement", "Fallback Attunement", "fourth_horizon", "Fourth Horizon"}
+        };
+        for (int column = 0; column < branches.length; column++) {
+            int bx = x + column * 101;
+            addPerkButton(state, branches[column][0], branches[column][1], bx, topPos + 72);
+            addPerkButton(state, branches[column][2], branches[column][3], bx, topPos + 116);
+        }
+    }
+
+    private void addPerkButton(PrestigeNetwork.StatePacket state, String id, String label, int x, int y) {
+        boolean selected = state.perks().contains(id);
+        Button button = Button.builder(Component.literal((selected ? "✓ " : "") + label), ignored ->
+                PrestigeNetwork.sendAction(PrestigeNetwork.Action.TOGGLE_PERK, actionPos(), id))
+                .bounds(x, y, 96, 32).build();
+        button.setTooltip(Tooltip.create(Component.literal(switch (id) {
+            case "expanded_attunement" -> "Unlock approved modded temperate spawn biomes.";
+            case "frontier_attunement" -> "Unlock demanding vanilla frontier spawn biomes.";
+            case "safe_arrival" -> "Require solid ground and clear, fluid-free headroom.";
+            case "settled_arrival" -> "Allow landing at the nearest village instead of a biome.";
+            case "fallback_attunement" -> "Choose a second biome if the primary cannot be found.";
+            case "fourth_horizon" -> "Authorize a fourth successor attempt before rollback.";
+            default -> id;
+        })));
+        button.active = state.operator() && !state.status().equals("staged") && !state.status().equals("committed");
+        addRenderableWidget(button);
     }
 
     private void rebuildSchematics(PrestigeNetwork.StatePacket state, int x) {
@@ -134,7 +188,7 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
 
     private void requestCurrentTab() {
         PrestigeNetwork.sendAction(tab == 0 ? PrestigeNetwork.Action.REFRESH_RESET
-                : PrestigeNetwork.Action.REFRESH_SCHEMATICS, actionPos(), "");
+                : tab == 1 ? PrestigeNetwork.Action.REFRESH_SCHEMATICS : PrestigeNetwork.Action.REFRESH_PERKS, actionPos(), "");
     }
 
     private void switchTab(int next) {
@@ -165,6 +219,8 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
         }
         graphics.drawString(font, "Generation " + state.generation() + " · Total " + state.total()
                 + " · Status " + state.status(), 10, 25, 0xffdddddd, false);
+        if (tab == 2) graphics.drawString(font, "Upcoming build: " + state.perks().size() + "/" + state.perkBudget()
+                + " points", 10, 151, 0xffdddddd, false);
     }
 
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {

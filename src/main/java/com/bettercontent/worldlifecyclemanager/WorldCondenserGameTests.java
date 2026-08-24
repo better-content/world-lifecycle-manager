@@ -169,7 +169,8 @@ public final class WorldCondenserGameTests {
         List<String> biomes = IntStream.range(0, PrestigeLimits.MAX_BIOMES)
                 .mapToObj(index -> "fixture:biome_" + index).toList();
         var packet = new PrestigeNetwork.StatePacket(PrestigeNetwork.ViewKind.RESET, "", "draft", "world",
-                BlockPos.ZERO, 2, 1, biomes.get(0), "Builder", true, biomes, List.of(), List.of());
+                BlockPos.ZERO, 2, 1, biomes.get(0), "Builder", true, biomes, List.of(), List.of(),
+                List.of("safe_arrival"), 2, "biome", "");
         FriendlyByteBuf roundTrip = new FriendlyByteBuf(Unpooled.buffer());
         try {
             PrestigeNetwork.StatePacket.encode(packet, roundTrip);
