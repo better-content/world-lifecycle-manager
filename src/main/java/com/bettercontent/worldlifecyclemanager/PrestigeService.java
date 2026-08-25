@@ -27,11 +27,14 @@ public final class PrestigeService {
     public static Path lineagePath(MinecraftServer server) { return state(server).resolve("lineage-v4.tsv"); }
 
     public static PrestigeContracts.Lineage lineage(MinecraftServer server) throws IOException {
+        if (Files.exists(server.getServerDirectory().toPath().toAbsolutePath().normalize().resolve(".prestige"))) {
+            throw new IllegalStateException("legacy .prestige state is unsupported; move or remove it before starting");
+        }
         Path v4 = lineagePath(server);
         if (!Files.isRegularFile(v4)) {
             if (Files.exists(state(server).resolve("lineage-v1.tsv")) || Files.exists(state(server).resolve("lineage-v2.tsv"))
                     || Files.exists(state(server).resolve("lineage-v3.tsv"))) {
-                throw new IllegalStateException("legacy Prestige lineage is unsupported; remove .prestige and start the v4 supervisor");
+                throw new IllegalStateException("legacy Prestige lineage is unsupported; remove .world_lifecycle_manager and start cleanly");
             }
             throw new IllegalStateException("prestige v4 wrapper has not initialized lineage state");
         }
@@ -152,8 +155,6 @@ public final class PrestigeService {
                 || !staged.worldName().equals(worldName(server))) {
             throw new IllegalStateException("staged identity is stale");
         }
-        server.getPlayerList().saveAll();
-        if (!server.saveEverything(true, true, true)) throw new IllegalStateException("Minecraft save finalization failed");
         String transaction = PrestigeContracts.newTransactionId();
         long oldSeed = server.overworld().getSeed();
         PrestigePerks.commit(server, transaction, staged.biome());
@@ -161,6 +162,8 @@ public final class PrestigeService {
                 lineage.lineageId(), lineage.generation(), transaction, staged.worldName(), oldSeed, staged.biome()));
         PrestigeContracts.writeReset(resetPath, new PrestigeContracts.Reset(lineage.lineageId(), lineage.generation(),
                 transaction, staged.worldName(), oldSeed, staged.biome()));
+        // The scheduled clean halt performs Minecraft's normal player/world flush. Doing a second synchronous
+        // save here can exceed the watchdog in a large pack; the supervisor cannot archive until that halt exits.
         PrestigeCoordinator.scheduleStop();
         Files.deleteIfExists(control(server).resolve("staged-request-v4.tsv"));
         Files.deleteIfExists(control(server).resolve("draft-v4.tsv"));

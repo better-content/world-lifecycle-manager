@@ -72,9 +72,20 @@ val stageRuntimeJar by tasks.registering(Copy::class) {
 
 tasks.named("assemble") { dependsOn(stageRuntimeJar) }
 tasks.withType<JavaCompile>().configureEach { options.release.set(17) }
-tasks.test { useJUnitPlatform() }
+tasks.test {
+    useJUnitPlatform()
+    finalizedBy(tasks.jacocoTestReport)
+}
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    reports {
+        html.required.set(true)
+        xml.required.set(true)
+        csv.required.set(false)
+    }
+}
 tasks.register("headlessGameTest") { dependsOn(tasks.named("runGameTestServer")) }
-tasks.register("verifyFast") { dependsOn(tasks.named("check")) }
+tasks.register("verifyFast") { dependsOn(tasks.named("check"), tasks.named("jacocoTestReport")) }
 tasks.register("verifyFull") { dependsOn(tasks.named("verifyFast"), tasks.named("headlessGameTest")) }
 
 val syncGameTestStructures = tasks.register<Sync>("syncGameTestStructures") {

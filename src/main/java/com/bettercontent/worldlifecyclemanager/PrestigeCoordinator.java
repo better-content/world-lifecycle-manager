@@ -6,6 +6,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.StructureTags;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.arguments.EntityArgument;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.network.chat.Component;
@@ -13,8 +14,12 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.TicketType;
+import net.minecraft.util.Unit;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraftforge.network.NetworkHooks;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.storage.LevelResource;
@@ -57,12 +62,21 @@ public final class PrestigeCoordinator {
                     }
                 }))
                 .then(Commands.literal("gui")
-                        .executes(context -> openGui(context.getSource().getPlayerOrException(), 0))
-                        .then(Commands.argument("tab", StringArgumentType.word()).executes(context ->
-                                openGui(context.getSource().getPlayerOrException(), tab(StringArgumentType.getString(context, "tab")))))
-                        .then(Commands.argument("player", EntityArgument.player()).requires(source -> source.hasPermission(4))
-                                .then(Commands.argument("tab", StringArgumentType.word()).executes(context -> openGui(
-                                        EntityArgument.getPlayer(context, "player"), tab(StringArgumentType.getString(context, "tab")))))))
+                        .executes(context -> openGui(context.getSource(), context.getSource().getPlayerOrException(), 0))
+                        .then(Commands.literal("configure").executes(context ->
+                                openGui(context.getSource(), context.getSource().getPlayerOrException(), 0)))
+                        .then(Commands.literal("schematics").executes(context ->
+                                openGui(context.getSource(), context.getSource().getPlayerOrException(), 1)))
+                        .then(Commands.literal("perks").executes(context ->
+                                openGui(context.getSource(), context.getSource().getPlayerOrException(), 2)))
+                        .then(Commands.literal("player").requires(source -> source.hasPermission(4))
+                                .then(Commands.argument("player", EntityArgument.player())
+                                        .then(Commands.literal("configure").executes(context -> openGui(
+                                                context.getSource(), EntityArgument.getPlayer(context, "player"), 0)))
+                                        .then(Commands.literal("schematics").executes(context -> openGui(
+                                                context.getSource(), EntityArgument.getPlayer(context, "player"), 1)))
+                                        .then(Commands.literal("perks").executes(context -> openGui(
+                                                context.getSource(), EntityArgument.getPlayer(context, "player"), 2))))))
                 .then(Commands.literal("perks")
                         .executes(context -> {
                             try {
@@ -82,12 +96,12 @@ public final class PrestigeCoordinator {
                             catch (Exception error) { context.getSource().sendFailure(Component.literal("Landing selection failed: " + error.getMessage())); return 0; }
                         })))
                 .then(Commands.literal("fallback").requires(source -> source.hasPermission(4))
-                        .then(Commands.argument("biome-or-clear", StringArgumentType.word()).executes(context -> {
+                        .then(Commands.argument("biome-or-clear", StringArgumentType.greedyString()).executes(context -> {
                             try { PrestigePerks.setFallback(context.getSource().getServer(), StringArgumentType.getString(context, "biome-or-clear")); return 1; }
                             catch (Exception error) { context.getSource().sendFailure(Component.literal("Fallback selection failed: " + error.getMessage())); return 0; }
                         })))
                 .then(Commands.literal("select").requires(source -> source.hasPermission(4))
-                        .then(Commands.argument("biome", StringArgumentType.word()).executes(context -> {
+                        .then(Commands.argument("biome", StringArgumentType.greedyString()).executes(context -> {
                             try {
                                 String biome = StringArgumentType.getString(context, "biome");
                                 PrestigeService.saveDraft(context.getSource().getServer(), biome, "Operator");
@@ -172,6 +186,9 @@ public final class PrestigeCoordinator {
         try {
             PrestigeContracts.Successor successor = PrestigeContracts.readSuccessor(successorPath);
             PrestigePerks.Build perks = PrestigePerks.reset(server, successor);
+            if (successor.attempt() > perks.successorAttempts()) {
+                throw new IllegalStateException("successor attempt is not authorized by the committed perk build");
+            }
             PrestigeContracts.Lineage lineage = PrestigeService.lineage(server);
             if (!successor.lineageId().equals(lineage.lineageId())
                     || successor.baseGeneration() != lineage.generation()
@@ -182,7 +199,7 @@ public final class PrestigeCoordinator {
             LandingResult landing = resolveLanding(level, successor, perks);
             boolean foundExact = landing != null;
             BlockPos spawn = foundExact ? landing.pos() : level.getSharedSpawnPos();
-            if (foundExact) level.setDefaultSpawnPos(spawn, 0.0F);
+            if (foundExact) configureSuccessorSpawn(server, level, spawn);
             String actualBiome = level.getBiome(spawn).unwrapKey()
                     .map(key -> key.location().toString()).orElse("minecraft:the_void");
             boolean fresh = freshDirectory(server.getWorldPath(LevelResource.PLAYER_DATA_DIR))
@@ -195,7 +212,7 @@ public final class PrestigeCoordinator {
             PrestigeContracts.writeHealth(PrestigeService.control(server).resolve("health-result-v4.tsv"), successor,
                     level.getSeed(), actualBiome, PrestigeService.worldName(server), fresh, foundExact);
             PrestigePerks.writeHealth(server, successor, perks, foundExact ? landing.resolvedTarget() : "none",
-                    foundExact && landing.safe());
+                    spawn, foundExact && landing.safe());
             server.sendSystemMessage(Component.literal("Prestige successor health published for " + successor.transactionId()
                     + " biome=" + actualBiome));
         } catch (Exception error) {
@@ -204,6 +221,19 @@ public final class PrestigeCoordinator {
     }
 
     private record LandingResult(BlockPos pos, String resolvedTarget, boolean safe) {}
+
+    static void configureSuccessorSpawn(MinecraftServer server, ServerLevel level, BlockPos spawn) {
+        ChunkPos previous = new ChunkPos(level.getSharedSpawnPos());
+        ChunkPos target = new ChunkPos(spawn);
+        if (!previous.equals(target)) {
+            level.getChunkSource().removeRegionTicket(TicketType.START, previous, 11, Unit.INSTANCE);
+        }
+        level.setDefaultSpawnPos(spawn, 0.0F);
+        level.getChunkSource().addRegionTicket(TicketType.START, target, 11, Unit.INSTANCE);
+        // The landing resolver has already proven this exact block safe. Avoid vanilla's random
+        // 21x21 respawn search synchronously loading neighboring C2ME chunks during first login.
+        level.getGameRules().getRule(GameRules.RULE_SPAWN_RADIUS).set(0, server);
+    }
 
     private static LandingResult resolveLanding(ServerLevel level, PrestigeContracts.Successor successor,
                                                 PrestigePerks.Build perks) {
@@ -267,16 +297,7 @@ public final class PrestigeCoordinator {
         return feet;
     }
 
-    private static int tab(String raw) {
-        return switch (raw.toLowerCase(java.util.Locale.ROOT)) {
-            case "reset" -> 0;
-            case "schematics", "schematic" -> 1;
-            case "perks", "perk" -> 2;
-            default -> throw new IllegalArgumentException("GUI tab must be reset, schematics, or perks");
-        };
-    }
-
-    private static int openGui(ServerPlayer player, int tab) {
+    private static int openGui(CommandSourceStack source, ServerPlayer player, int tab) {
         NetworkHooks.openScreen(player, new SimpleMenuProvider(
                 (id, inventory, ignored) -> new WorldCondenserMenu(id, inventory, BlockPos.ZERO, true, tab),
                 Component.literal("Prestige")), buffer -> {
@@ -284,6 +305,8 @@ public final class PrestigeCoordinator {
             buffer.writeBoolean(true);
             buffer.writeVarInt(tab);
         });
+        String view = switch (tab) { case 0 -> "configure"; case 1 -> "schematics"; default -> "perks"; };
+        source.sendSuccess(() -> Component.literal("Opened Prestige " + view + " for " + player.getScoreboardName()), false);
         return 1;
     }
 

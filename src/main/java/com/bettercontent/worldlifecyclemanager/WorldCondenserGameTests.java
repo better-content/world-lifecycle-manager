@@ -11,7 +11,11 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.TicketType;
+import net.minecraft.util.Unit;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
@@ -25,6 +29,26 @@ import java.util.stream.IntStream;
 @PrefixGameTestTemplate(false)
 public final class WorldCondenserGameTests {
     private WorldCondenserGameTests() {}
+
+    @GameTest(templateNamespace = PrestigeMod.MOD_ID, template = "empty", timeoutTicks = 100)
+    public static void successorSpawnIsExactAndRetained(final GameTestHelper helper) {
+        var level = helper.getLevel();
+        var server = level.getServer();
+        BlockPos previousSpawn = level.getSharedSpawnPos();
+        int previousRadius = level.getGameRules().getInt(GameRules.RULE_SPAWN_RADIUS);
+        BlockPos target = helper.absolutePos(new BlockPos(2, 2, 2));
+        PrestigeCoordinator.configureSuccessorSpawn(server, level, target);
+        if (!level.getSharedSpawnPos().equals(target)
+                || level.getGameRules().getInt(GameRules.RULE_SPAWN_RADIUS) != 0) {
+            helper.fail("Successor landing did not become the exact zero-radius world spawn");
+            return;
+        }
+        level.getChunkSource().removeRegionTicket(TicketType.START, new ChunkPos(target), 11, Unit.INSTANCE);
+        level.setDefaultSpawnPos(previousSpawn, 0.0F);
+        level.getChunkSource().addRegionTicket(TicketType.START, new ChunkPos(previousSpawn), 11, Unit.INSTANCE);
+        level.getGameRules().getRule(GameRules.RULE_SPAWN_RADIUS).set(previousRadius, server);
+        helper.succeed();
+    }
 
     @GameTest(templateNamespace = PrestigeMod.MOD_ID, template = "empty", timeoutTicks = 100)
     public static void schematicMintCreatesPersistentInventory(final GameTestHelper helper) {
