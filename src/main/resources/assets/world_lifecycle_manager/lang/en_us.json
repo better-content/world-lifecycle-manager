@@ -4,6 +4,12 @@
   "block.world_lifecycle_manager.schematic_mint": "Schematic Mint",
   "screen.world_lifecycle_manager.world_condenser": "World Condenser",
   "screen.world_lifecycle_manager.schematic_mint": "Schematic Mint",
+  "screen.world_lifecycle_manager.substitutions": "Material Substitutions",
+  "screen.world_lifecycle_manager.substitutions.empty": "Load a deployed schematic to evaluate its ordinary building blocks.",
+  "screen.world_lifecycle_manager.fallback": "Fallback",
+  "screen.world_lifecycle_manager.clear": "Clear",
+  "screen.world_lifecycle_manager.clear_all": "All",
+  "screen.world_lifecycle_manager.ghost_hint": "Carry a replacement block and click to assign it; click empty-handed to clear.",
   "message.world_lifecycle_manager.condenser_attuned": "The World Condenser accepts the Apprentice Blood Orb's signature.",
   "message.world_lifecycle_manager.condenser_needs_orb": "Attune the Interface with a bound Apprentice Blood Orb.",
   "message.world_lifecycle_manager.condenser_unformed": "Requires a hollow 3x3x3 shell: 25 Hulls and one outward-facing Interface."

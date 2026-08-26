@@ -1,0 +1,16 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="All Rights Reserved"
+
+[[mods]]
+modId="world_lifecycle_manager_visual_harness"
+version="1"
+displayName="World Lifecycle Manager Visual Harness"
+description='''Non-shipping console-driven screenshot validation companion.'''
+
+[[dependencies.world_lifecycle_manager_visual_harness]]
+modId="world_lifecycle_manager"
+mandatory=true
+versionRange="[0.1.0,)"
+ordering="AFTER"
+side="BOTH"

@@ -1,0 +1,9 @@
+version:3465
+guiScale:2
+forceUnicodeFont:false
+fullscreen:false
+graphicsMode:1
+renderDistance:2
+simulationDistance:5
+onboardAccessibility:false
+tutorialStep:none

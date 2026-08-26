@@ -9,6 +9,9 @@ displayName="${mod_name}"
 authors="Better Content"
 description='''Dedicated-server world reset, verified archive, rollback, and schematic lineage support.'''
 
+[[mixins]]
+config="world_lifecycle_manager.mixins.json"
+
 [[dependencies.${mod_id}]]
 modId="forge"
 mandatory=true
