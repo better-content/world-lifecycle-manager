@@ -11,10 +11,10 @@ Java 17 is required. The checked-in Gradle wrapper provides the supported build 
 ```sh
 ./gradlew verifyFast
 ./gradlew verifyFull
-./gradlew reobfJar
+./gradlew verifyFull stageRuntimeJar
 ```
 
-`verifyFast` runs the JVM tests. `verifyFull` also runs the Forge GameTests. Production deployment must use `build/reobfJar/output.jar`, not the development-mapped `jar` output.
+`verifyFast` runs the JVM tests. `verifyFull` also runs the Forge GameTests. `stageRuntimeJar` copies the reobfuscated production artifact to `build/libs/world-lifecycle-manager-0.1.0.jar`; deploy that canonical staged JAR.
 
 The matching sibling pack repository is [better-content/better-content-modpack](https://github.com/better-content/better-content-modpack). Its `world-lifecycle-manager-server.sh` supervisor owns archive publication, successor health, retry, rollback, and exactly-once lineage advancement.
 
