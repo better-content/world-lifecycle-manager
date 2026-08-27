@@ -11,9 +11,14 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.TicketType;
+import net.minecraft.util.Unit;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import com.simibubi.create.content.schematics.cannon.SchematicannonBlockEntity;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 import net.minecraftforge.registries.ForgeRegistries;
 import wayoftime.bloodmagic.core.data.Binding;
@@ -25,6 +30,26 @@ import java.util.stream.IntStream;
 @PrefixGameTestTemplate(false)
 public final class WorldCondenserGameTests {
     private WorldCondenserGameTests() {}
+
+    @GameTest(templateNamespace = PrestigeMod.MOD_ID, template = "empty", timeoutTicks = 100)
+    public static void successorSpawnIsExactAndRetained(final GameTestHelper helper) {
+        var level = helper.getLevel();
+        var server = level.getServer();
+        BlockPos previousSpawn = level.getSharedSpawnPos();
+        int previousRadius = level.getGameRules().getInt(GameRules.RULE_SPAWN_RADIUS);
+        BlockPos target = helper.absolutePos(new BlockPos(2, 2, 2));
+        PrestigeCoordinator.configureSuccessorSpawn(server, level, target);
+        if (!level.getSharedSpawnPos().equals(target)
+                || level.getGameRules().getInt(GameRules.RULE_SPAWN_RADIUS) != 0) {
+            helper.fail("Successor landing did not become the exact zero-radius world spawn");
+            return;
+        }
+        level.getChunkSource().removeRegionTicket(TicketType.START, new ChunkPos(target), 11, Unit.INSTANCE);
+        level.setDefaultSpawnPos(previousSpawn, 0.0F);
+        level.getChunkSource().addRegionTicket(TicketType.START, new ChunkPos(previousSpawn), 11, Unit.INSTANCE);
+        level.getGameRules().getRule(GameRules.RULE_SPAWN_RADIUS).set(previousRadius, server);
+        helper.succeed();
+    }
 
     @GameTest(templateNamespace = PrestigeMod.MOD_ID, template = "empty", timeoutTicks = 100)
     public static void schematicMintCreatesPersistentInventory(final GameTestHelper helper) {
@@ -169,7 +194,8 @@ public final class WorldCondenserGameTests {
         List<String> biomes = IntStream.range(0, PrestigeLimits.MAX_BIOMES)
                 .mapToObj(index -> "fixture:biome_" + index).toList();
         var packet = new PrestigeNetwork.StatePacket(PrestigeNetwork.ViewKind.RESET, "", "draft", "world",
-                BlockPos.ZERO, 2, 1, biomes.get(0), "Builder", true, biomes, List.of(), List.of());
+                BlockPos.ZERO, 2, 1, biomes.get(0), "Builder", true, biomes, List.of(), List.of(),
+                List.of("safe_arrival"), 2, "biome", "");
         FriendlyByteBuf roundTrip = new FriendlyByteBuf(Unpooled.buffer());
         try {
             PrestigeNetwork.StatePacket.encode(packet, roundTrip);
@@ -238,6 +264,26 @@ public final class WorldCondenserGameTests {
         if (safe.getAllKeys().size() <= 4) {
             helper.fail("Create-safe schematic NBT discarded all approved motor configuration");
             return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = PrestigeMod.MOD_ID, template = "empty", timeoutTicks = 100)
+    public static void schematicannonSubstitutionRulesPersist(final GameTestHelper helper) {
+        BlockPos pos = helper.absolutePos(new BlockPos(1, 1, 1));
+        helper.getLevel().setBlockAndUpdate(pos, AllBlocks.SCHEMATICANNON.getDefaultState());
+        if (!(helper.getLevel().getBlockEntity(pos) instanceof SchematicannonBlockEntity cannon)) {
+            helper.fail("Create Schematicannon did not create its block entity"); return;
+        }
+        var access = (SchematicannonSubstitutionAccess) cannon;
+        var source = new ResourceLocation("minecraft", "stone");
+        var target = new ResourceLocation("minecraft", "cobblestone");
+        access.worldLifecycleManager$setSubstitution(source, target);
+        CompoundTag saved = cannon.getUpdateTag();
+        access.worldLifecycleManager$clearSubstitutions();
+        cannon.handleUpdateTag(saved);
+        if (!target.equals(access.worldLifecycleManager$substitutions().get(source))) {
+            helper.fail("Schematicannon substitution rule did not survive NBT synchronization"); return;
         }
         helper.succeed();
     }

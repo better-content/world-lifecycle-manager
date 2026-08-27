@@ -19,7 +19,8 @@ import java.util.zip.ZipFile;
 
 /** Standard-library-only verifier used by the shell supervisor and operator CLI. */
 public final class PrestigeArchiveVerifier {
-    private static final String MANIFEST_NAME = "world_lifecycle_manager-archive-manifest-v1.tsv";
+    /** Must match the supervisor's published archive contract name exactly. */
+    static final String MANIFEST_NAME = "world-lifecycle-manager-archive-manifest-v1.tsv";
     private static final String MANIFEST_MAGIC = "BC_PRESTIGE_ARCHIVE_V1";
     private static final Pattern ID = Pattern.compile("[a-z0-9][a-z0-9_-]{0,63}");
     private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");

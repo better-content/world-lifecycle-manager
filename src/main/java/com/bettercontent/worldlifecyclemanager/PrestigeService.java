@@ -8,18 +8,14 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
-import java.io.BufferedReader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.ArrayList;
-import java.util.Locale;
 
 public final class PrestigeService {
     public record View(String status, String worldName, PrestigeContracts.Lineage lineage, String selectedBiome,
                        String author, List<String> allowedBiomes, List<String> ownUploads,
-                       List<SchematicLibrary.Entry> published, boolean operator) {}
+                       List<SchematicLibrary.Entry> published, boolean operator, PrestigePerks.Build perkBuild) {}
 
     private PrestigeService() {}
 
@@ -31,11 +27,14 @@ public final class PrestigeService {
     public static Path lineagePath(MinecraftServer server) { return state(server).resolve("lineage-v4.tsv"); }
 
     public static PrestigeContracts.Lineage lineage(MinecraftServer server) throws IOException {
+        if (Files.exists(server.getServerDirectory().toPath().toAbsolutePath().normalize().resolve(".prestige"))) {
+            throw new IllegalStateException("legacy .prestige state is unsupported; move or remove it before starting");
+        }
         Path v4 = lineagePath(server);
         if (!Files.isRegularFile(v4)) {
             if (Files.exists(state(server).resolve("lineage-v1.tsv")) || Files.exists(state(server).resolve("lineage-v2.tsv"))
                     || Files.exists(state(server).resolve("lineage-v3.tsv"))) {
-                throw new IllegalStateException("legacy Prestige lineage is unsupported; remove .prestige and start the v4 supervisor");
+                throw new IllegalStateException("legacy Prestige lineage is unsupported; remove .world_lifecycle_manager and start cleanly");
             }
             throw new IllegalStateException("prestige v4 wrapper has not initialized lineage state");
         }
@@ -43,24 +42,11 @@ public final class PrestigeService {
     }
 
     public static List<String> allowedBiomes(MinecraftServer server) throws IOException {
-        Path path = server.getServerDirectory().toPath().toAbsolutePath().normalize()
-                .resolve("config/world_lifecycle_manager-biomes.txt");
-        if (!Files.isRegularFile(path)) throw new IllegalStateException("missing config/world_lifecycle_manager-biomes.txt");
-        List<String> configured = new ArrayList<>();
-        try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-            String line;
-            int scannedLines = 0;
-            while ((line = reader.readLine()) != null) {
-                if (++scannedLines > PrestigeLimits.MAX_BIOME_FILE_LINES) throw new IllegalStateException(
-                        "prestige biome allowlist exceeds " + PrestigeLimits.MAX_BIOME_FILE_LINES + " lines");
-                String value = line.strip();
-                if (value.isEmpty() || value.startsWith("#")) continue;
-                if (configured.size() >= PrestigeLimits.MAX_BIOMES) throw new IllegalStateException(
-                        "prestige biome allowlist exceeds " + PrestigeLimits.MAX_BIOMES + " entries");
-                configured.add(value);
-            }
-        }
-        List<String> values = configured.stream().distinct().sorted().toList();
+        return allowedBiomes(server, PrestigePerks.draft(server));
+    }
+
+    public static List<String> allowedBiomes(MinecraftServer server, PrestigePerks.Build build) throws IOException {
+        List<String> values = PrestigePerks.allowedBiomes(server, build);
         if (values.isEmpty()) throw new IllegalStateException("prestige biome allowlist is empty");
         for (String value : values) {
             PrestigeContracts.validateBiome(value);
@@ -75,10 +61,11 @@ public final class PrestigeService {
     public static View view(ServerPlayer player, boolean includeSchematics) throws IOException {
         MinecraftServer server = player.server;
         PrestigeContracts.Lineage lineage = lineage(server);
+        PrestigePerks.Build perkBuild = PrestigePerks.draft(server);
         String status = Files.exists(control(server).resolve("successor-request-v4.tsv")) ? "successor-starting"
                 : Files.exists(control(server).resolve("reset-request-v4.tsv")) ? "committed"
                 : Files.exists(control(server).resolve("staged-request-v4.tsv")) ? "staged" : "draft";
-        List<String> allowedBiomes = allowedBiomes(server);
+        List<String> allowedBiomes = allowedBiomes(server, perkBuild);
         String biome = allowedBiomes.get(0);
         String author = player.getGameProfile().getName();
         Path draftPath = control(server).resolve("draft-v4.tsv");
@@ -101,7 +88,7 @@ public final class PrestigeService {
                     .map(name -> player.getGameProfile().getName() + "/" + name).toList();
             published = SchematicLibrary.list(server);
         }
-        return new View(status, worldName(server), lineage, biome, author, allowedBiomes, uploads, published, operator);
+        return new View(status, worldName(server), lineage, biome, author, allowedBiomes, uploads, published, operator, perkBuild);
     }
 
     public static void saveDraft(ServerPlayer player, String biome) throws IOException {
@@ -114,7 +101,7 @@ public final class PrestigeService {
                 || Files.exists(control(server).resolve("reset-request-v4.tsv"))) {
             throw new IllegalStateException("prestige selection is locked");
         }
-        if (!allowedBiomes(server).contains(biome)) throw new IllegalArgumentException("biome is not allowlisted");
+        if (!allowedBiomes(server, PrestigePerks.draft(server)).contains(biome)) throw new IllegalArgumentException("biome is not unlocked");
         PrestigeContracts.validateAuthor(author);
         PrestigeContracts.Lineage lineage = lineage(server);
         PrestigeContracts.writeDraft(control(server).resolve("draft-v4.tsv"), new PrestigeContracts.Draft(
@@ -136,6 +123,7 @@ public final class PrestigeService {
             throw new IllegalStateException("draft identity is stale");
         }
         if (!allowedBiomes(server).contains(draft.biome())) throw new IllegalStateException("draft biome is no longer allowlisted");
+        PrestigePerks.stage(server, draft.biome());
         PrestigeContracts.writeStaged(control(server).resolve("staged-request-v4.tsv"), new PrestigeContracts.Staged(
                 draft.lineageId(), draft.generation(), draft.biome(), draft.author(), draft.worldName()));
     }
@@ -148,6 +136,7 @@ public final class PrestigeService {
     public static void cancel(MinecraftServer server) throws IOException {
         if (Files.exists(control(server).resolve("reset-request-v4.tsv"))) throw new IllegalStateException("committed reset cannot be cancelled in-game");
         Files.deleteIfExists(control(server).resolve("staged-request-v4.tsv"));
+        PrestigePerks.cancel(server);
     }
 
     public static String commit(ServerPlayer player, BlockPos interfacePos, String confirmation) throws IOException {
@@ -166,14 +155,15 @@ public final class PrestigeService {
                 || !staged.worldName().equals(worldName(server))) {
             throw new IllegalStateException("staged identity is stale");
         }
-        server.getPlayerList().saveAll();
-        if (!server.saveEverything(true, true, true)) throw new IllegalStateException("Minecraft save finalization failed");
         String transaction = PrestigeContracts.newTransactionId();
         long oldSeed = server.overworld().getSeed();
+        PrestigePerks.commit(server, transaction, staged.biome());
         PrestigeContracts.writeWorldBinding(worldBindingPath(server), new PrestigeContracts.WorldBinding(
                 lineage.lineageId(), lineage.generation(), transaction, staged.worldName(), oldSeed, staged.biome()));
         PrestigeContracts.writeReset(resetPath, new PrestigeContracts.Reset(lineage.lineageId(), lineage.generation(),
                 transaction, staged.worldName(), oldSeed, staged.biome()));
+        // The scheduled clean halt performs Minecraft's normal player/world flush. Doing a second synchronous
+        // save here can exceed the watchdog in a large pack; the supervisor cannot archive until that halt exits.
         PrestigeCoordinator.scheduleStop();
         Files.deleteIfExists(control(server).resolve("staged-request-v4.tsv"));
         Files.deleteIfExists(control(server).resolve("draft-v4.tsv"));

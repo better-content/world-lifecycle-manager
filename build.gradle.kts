@@ -3,6 +3,12 @@ plugins {
     `maven-publish`
     jacoco
     id("net.minecraftforge.gradle") version "[6.0.24,6.2)"
+    id("org.spongepowered.mixin") version "0.7.+"
+}
+
+mixin {
+    add(sourceSets.main.get(), "world_lifecycle_manager.refmap.json")
+    config("world_lifecycle_manager.mixins.json")
 }
 
 group = property("mod_group_id") as String
@@ -10,6 +16,13 @@ version = property("mod_version") as String
 
 base { archivesName.set("world-lifecycle-manager") }
 java { toolchain.languageVersion.set(JavaLanguageVersion.of(17)) }
+
+val visualHarness by sourceSets.creating {
+    compileClasspath += sourceSets.main.get().output
+    runtimeClasspath += sourceSets.main.get().output
+}
+configurations[visualHarness.implementationConfigurationName].extendsFrom(configurations.implementation.get())
+configurations[visualHarness.runtimeOnlyConfigurationName].extendsFrom(configurations.runtimeOnly.get())
 
 minecraft {
     mappings("official", property("minecraft_version") as String)
@@ -22,14 +35,30 @@ minecraft {
             property("mixin.env.refMapRemappingFile", file("build/createSrgToMcp/output.srg").absolutePath)
             mods { create(property("mod_id") as String) { source(sourceSets.main.get()) } }
         }
-        create("client")
-        create("server") { arg("--nogui") }
+        val baseClient = create("client")
+        val baseServer = create("server") { arg("--nogui") }
         create("gameTestServer") {
             workingDirectory(project.file("run-gametest"))
             property("forge.enableGameTest", "true")
             property("forge.gameTestServer", "true")
             property("forge.enabledGameTestNamespaces", property("mod_id") as String)
             arg("--nogui")
+        }
+        create("visualServer") {
+            parent(baseServer)
+            workingDirectory(project.file("run-visual-server"))
+            arg("--nogui")
+            mods {
+                create("world_lifecycle_manager_visual_harness") { source(visualHarness) }
+            }
+        }
+        create("visualClient") {
+            parent(baseClient)
+            workingDirectory(project.file("run-visual-client"))
+            args("--quickPlayMultiplayer", "127.0.0.1:25565", "--width", "1280", "--height", "720")
+            mods {
+                create("world_lifecycle_manager_visual_harness") { source(visualHarness) }
+            }
         }
     }
 }
@@ -71,10 +100,25 @@ val stageRuntimeJar by tasks.registering(Copy::class) {
 }
 
 tasks.named("assemble") { dependsOn(stageRuntimeJar) }
+tasks.named("compileVisualHarnessJava") { dependsOn(tasks.named("classes")) }
+tasks.withType<JavaExec>().configureEach {
+    if (name == "runVisualServer") standardInput = System.`in`
+}
 tasks.withType<JavaCompile>().configureEach { options.release.set(17) }
-tasks.test { useJUnitPlatform() }
+tasks.test {
+    useJUnitPlatform()
+    finalizedBy(tasks.jacocoTestReport)
+}
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    reports {
+        html.required.set(true)
+        xml.required.set(true)
+        csv.required.set(false)
+    }
+}
 tasks.register("headlessGameTest") { dependsOn(tasks.named("runGameTestServer")) }
-tasks.register("verifyFast") { dependsOn(tasks.named("check")) }
+tasks.register("verifyFast") { dependsOn(tasks.named("check"), tasks.named("jacocoTestReport")) }
 tasks.register("verifyFull") { dependsOn(tasks.named("verifyFast"), tasks.named("headlessGameTest")) }
 
 val syncGameTestStructures = tasks.register<Sync>("syncGameTestStructures") {
@@ -84,6 +128,14 @@ val syncGameTestStructures = tasks.register<Sync>("syncGameTestStructures") {
 
 tasks.matching { it.name.startsWith("prepareRunGameTestServer") }.configureEach {
     dependsOn(syncGameTestStructures)
+}
+
+val syncVisualHarnessOptions = tasks.register<Copy>("syncVisualHarnessOptions") {
+    from(layout.projectDirectory.file("src/visualHarness/options.txt"))
+    into(layout.projectDirectory.dir("run-visual-client"))
+}
+tasks.matching { it.name.startsWith("prepareRunVisualClient") }.configureEach {
+    dependsOn(syncVisualHarnessOptions)
 }
 
 tasks.processResources {

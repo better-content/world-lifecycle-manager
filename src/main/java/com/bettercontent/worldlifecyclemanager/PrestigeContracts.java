@@ -139,7 +139,7 @@ public final class PrestigeContracts {
         validateId("transaction ID", transaction);
         validateBiome(biome);
         long attempt = parseNonNegativeLong("attempt", fields.get("attempt"));
-        if (attempt < 1 || attempt > 3) throw new IllegalArgumentException("attempt must be in 1..3");
+        if (attempt < 1 || attempt > 4) throw new IllegalArgumentException("attempt must be in 1..4");
         return new Successor(lineage, baseGeneration, targetGeneration, transaction,
                 parseLong("successor_seed", fields.get("successor_seed")), biome, (int) attempt);
     }
@@ -176,7 +176,7 @@ public final class PrestigeContracts {
         validateId("lineage ID", lineage);
         validateId("transaction ID", transaction);
         long attempt = parseNonNegativeLong("attempt", fields.get("attempt"));
-        if (attempt < 1 || attempt > 3) throw new IllegalArgumentException("attempt must be in 1..3");
+        if (attempt < 1 || attempt > 4) throw new IllegalArgumentException("attempt must be in 1..4");
         return new ActiveSuccessor(pid, startTicks, lineage, transaction, (int) attempt);
     }
 
@@ -239,11 +239,10 @@ public final class PrestigeContracts {
     }
 
     public static void writeHealth(Path path, Successor successor, long actualSeed, String actualBiome,
-                                   String worldName, boolean freshPlayers) throws IOException {
+                                   String worldName, boolean freshPlayers, boolean targetSatisfied) throws IOException {
         validateWorldName(worldName);
         validateBiome(actualBiome);
-        String status = actualSeed == successor.successorSeed()
-                && actualBiome.equals(successor.biome()) && freshPlayers ? "healthy" : "mismatch";
+        String status = actualSeed == successor.successorSeed() && targetSatisfied && freshPlayers ? "healthy" : "mismatch";
         writeAtomic(path, List.of(HEALTH_MAGIC,
                 "lineage\t" + successor.lineageId(), "base_generation\t" + successor.baseGeneration(),
                 "target_generation\t" + successor.targetGeneration(), "transaction\t" + successor.transactionId(),

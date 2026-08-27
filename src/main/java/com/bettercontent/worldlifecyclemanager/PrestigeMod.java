@@ -26,9 +26,13 @@ public final class PrestigeMod {
         PrestigeRegistry.RECIPE_TYPES.register(modBus);
         PrestigeRegistry.RECIPE_SERIALIZERS.register(modBus);
         PrestigeNetwork.register();
+        SchematicannonSubstitutionNetwork.register();
         modBus.addListener(this::onCreativeTab);
         modBus.addListener(this::onRegisterGameTests);
-        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> modBus.addListener(PrestigeClient::setup));
+        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
+            modBus.addListener(PrestigeClient::setup);
+            MinecraftForge.EVENT_BUS.register(SchematicannonSubstitutionClient.class);
+        });
         MinecraftForge.EVENT_BUS.register(PrestigeCoordinator.class);
     }
 
