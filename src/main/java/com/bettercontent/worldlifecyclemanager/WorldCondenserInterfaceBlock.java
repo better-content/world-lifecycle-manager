@@ -73,6 +73,7 @@ public final class WorldCondenserInterfaceBlock extends BaseEntityBlock {
             return InteractionResult.sidedSuccess(level.isClientSide);
         }
         if (!level.isClientSide && player instanceof ServerPlayer serverPlayer) {
+            ThreadsBridge.emit(serverPlayer,"condenser","formed");
             if (!PrestigeNetwork.allowPhysicalOpen(serverPlayer)) return InteractionResult.CONSUME;
             try {
                 NetworkHooks.openScreen(serverPlayer, condenser, buffer -> {
