@@ -7,7 +7,6 @@ plugins {
 }
 
 mixin {
-    add(sourceSets.main.get(), "world_lifecycle_manager.refmap.json")
     config("world_lifecycle_manager.mixins.json")
 }
 

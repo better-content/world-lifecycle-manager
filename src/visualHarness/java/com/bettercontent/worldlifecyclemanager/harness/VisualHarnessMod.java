@@ -26,7 +26,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
 public final class VisualHarnessMod {
     public static final String MOD_ID = "world_lifecycle_manager_visual_harness";
     private static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
-            .named(new ResourceLocation(MOD_ID, "capture")).networkProtocolVersion(() -> "1")
+            .named(ResourceLocation.fromNamespaceAndPath(MOD_ID, "capture")).networkProtocolVersion(() -> "1")
             .clientAcceptedVersions("1"::equals).serverAcceptedVersions("1"::equals).simpleChannel();
 
     public VisualHarnessMod() {
@@ -51,7 +51,8 @@ public final class VisualHarnessMod {
         player.serverLevel().setBlockAndUpdate(pos, AllBlocks.SCHEMATICANNON.getDefaultState());
         if (!(player.serverLevel().getBlockEntity(pos) instanceof SchematicannonBlockEntity cannon)) return 0;
         ((SchematicannonSubstitutionAccess) cannon).worldLifecycleManager$setSubstitution(
-                new ResourceLocation("minecraft", "stone"), new ResourceLocation("minecraft", "cobblestone"));
+                ResourceLocation.fromNamespaceAndPath("minecraft", "stone"),
+                ResourceLocation.fromNamespaceAndPath("minecraft", "cobblestone"));
         cannon.checklist.required.clear();
         cannon.checklist.gathered.clear();
         cannon.checklist.required.put(Blocks.STONE.asItem(), 48);
