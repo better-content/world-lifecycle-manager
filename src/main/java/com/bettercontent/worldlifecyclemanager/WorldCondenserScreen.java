@@ -11,7 +11,7 @@ import net.minecraft.world.entity.player.Inventory;
 
 public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCondenserMenu> {
     private record GraphNode(String id, String label, int column, int virtualY, int width, boolean free) {}
-    private static final int GRAPH_SCROLL_MAX = 420;
+    private static final int GRAPH_SCROLL_MAX = 360;
     private static final GraphNode[] GRAPH = {
             new GraphNode("schematicannon_start", "Schematicannon Start", 1, 24, 200, false),
             new GraphNode("embark_budget_iv", "Embark Budget IV · 18", 1, 82, 170, false),
@@ -25,13 +25,7 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
             new GraphNode("class_flood_runner", "Flood Runner", 0, 364, 120, false),
             new GraphNode("class_market_runner", "Market Runner", 1, 364, 120, false),
             new GraphNode("class_trail_wrangler", "Trail Wrangler", 2, 364, 120, false),
-            new GraphNode("free_class_selector", "Class Selector", 1, 416, 180, true),
-            new GraphNode("frontier_attunement", "Frontier Attunement", 0, 470, 120, false),
-            new GraphNode("settled_arrival", "Settled Arrival", 1, 470, 120, false),
-            new GraphNode("fourth_horizon", "Fourth Horizon", 2, 470, 120, false),
-            new GraphNode("expanded_attunement", "Expanded Attunement", 0, 516, 120, false),
-            new GraphNode("safe_arrival", "Safe Arrival", 1, 516, 120, false),
-            new GraphNode("fallback_attunement", "Fallback Attunement", 2, 516, 120, false)
+            new GraphNode("biome_selection", "Biome Selection", 1, 424, 180, false)
     };
     private int seenRevision = -1;
     private int tab;
@@ -94,44 +88,42 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
         int y = topPos + WorldCondenserLayout.contentTop(imageWidth, imageHeight);
         boolean compact = WorldCondenserLayout.compact(imageWidth, imageHeight);
         int rowGap = compact ? 22 : 24;
-        Button biome = Button.builder(Component.literal("Biome: " + shortText(state.selectedBiome(), 36)), button -> {
-            int index = Math.max(0, state.biomes().indexOf(state.selectedBiome()));
-            String next = state.biomes().get((index + 1) % state.biomes().size());
-            PrestigeNetwork.sendAction(PrestigeNetwork.Action.SET_BIOME, actionPos(), next);
-        }).bounds(x, y, width, 20).build();
-        biome.active = state.operator();
-        addRenderableWidget(biome);
-        y += compact ? 22 : 26;
+        for (int slot = 0; slot < 3; slot++) {
+            String label = switch (slot) { case 0 -> "Primary"; case 1 -> "Secondary"; default -> "Tertiary"; };
+            String selected = slot < state.selectedBiomes().size() ? state.selectedBiomes().get(slot) : "";
+            boolean enabled = state.operator() && state.perks().contains("biome_selection")
+                    && state.status().equals("draft") && (slot == 0 || state.selectedBiomes().size() >= slot);
+            int buttonWidth = slot == 0 ? width : Math.max(1, width - 70);
+            int selectedSlot = slot;
+            Button biome = Button.builder(Component.literal(label + ": " + (selected.isEmpty() ? "none" : shortText(selected, 34))), button -> {
+                int index = selected.isEmpty() ? -1 : state.biomes().indexOf(selected);
+                String next = nextUniqueBiome(state, selectedSlot, index);
+                PrestigeNetwork.sendAction(biomeAction(selectedSlot), actionPos(), next);
+            }).bounds(x, y, buttonWidth, 20).build();
+            biome.active = enabled && !state.biomes().isEmpty();
+            addRenderableWidget(biome);
+            if (slot > 0) {
+                Button clear = Button.builder(Component.literal("Clear"), button ->
+                        PrestigeNetwork.sendAction(biomeAction(selectedSlot), actionPos(), "clear"))
+                        .bounds(x + width - 64, y, 64, 20).build();
+                clear.active = enabled && !selected.isEmpty();
+                addRenderableWidget(clear);
+            }
+            y += rowGap;
+        }
         if (state.operator()) {
-            if (state.perks().contains("settled_arrival")) {
-                addRenderableWidget(Button.builder(Component.literal("Landing: " + state.landing()), button ->
-                        PrestigeNetwork.sendAction(PrestigeNetwork.Action.SET_LANDING, actionPos(),
-                                state.landing().equals("village") ? "biome" : "village"))
-                        .bounds(x, y, width, 20).build());
-                y += rowGap;
-            }
-            if (state.perks().contains("fallback_attunement") && state.landing().equals("biome")) {
-                String fallback = state.fallback().isEmpty() ? "none" : shortText(state.fallback(), 34);
-                addRenderableWidget(Button.builder(Component.literal("Fallback: " + fallback), button -> {
-                    int index = state.fallback().isEmpty() ? -1 : state.biomes().indexOf(state.fallback());
-                    String next = state.biomes().get((index + 1) % state.biomes().size());
-                    if (next.equals(state.selectedBiome())) next = state.biomes().get((index + 2) % state.biomes().size());
-                    PrestigeNetwork.sendAction(PrestigeNetwork.Action.SET_FALLBACK, actionPos(), next);
-                }).bounds(x, y, Math.max(1, width - 70), 20).build());
-                addRenderableWidget(Button.builder(Component.literal("Clear"), button ->
-                        PrestigeNetwork.sendAction(PrestigeNetwork.Action.SET_FALLBACK, actionPos(), "clear"))
-                        .bounds(x + width - 64, y, 64, 20).build());
-                y += rowGap;
-            }
             int actionWidth = Math.max(52, Math.min(88, (width - 12) / 4));
             Button stage = Button.builder(Component.literal("Stage reset"), button ->
                     PrestigeNetwork.sendAction(PrestigeNetwork.Action.STAGE, actionPos(), ""))
                     .bounds(x, y, actionWidth, 20).build();
-            stage.active = !menu.remote();
+            stage.active = !menu.remote() && state.status().equals("draft")
+                    && state.perks().contains("biome_selection") && !state.selectedBiomes().isEmpty();
             addRenderableWidget(stage);
-            addRenderableWidget(Button.builder(Component.literal("Cancel stage"), button ->
+            Button cancel = Button.builder(Component.literal("Cancel stage"), button ->
                     PrestigeNetwork.sendAction(PrestigeNetwork.Action.CANCEL, actionPos(), ""))
-                    .bounds(x + actionWidth + 6, y, actionWidth, 20).build());
+                    .bounds(x + actionWidth + 6, y, actionWidth, 20).build();
+            cancel.active = state.status().equals("staged");
+            addRenderableWidget(cancel);
             int confirmationX = x + actionWidth * 2 + 12;
             confirmation = new EditBox(font, confirmationX, y, Math.max(1, x + width - confirmationX), 20, Component.literal("World name"));
             confirmation.setHint(Component.literal(state.worldName()));
@@ -140,13 +132,34 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
             Button commit = Button.builder(Component.literal("COMMIT PERMANENT RESET"), button ->
                     PrestigeNetwork.sendAction(PrestigeNetwork.Action.COMMIT, actionPos(), confirmation.getValue()))
                 .bounds(x, y, width, 20).build();
-            commit.active = !menu.remote();
+            commit.active = !menu.remote() && state.status().equals("staged");
             addRenderableWidget(commit);
         }
         if (!state.operator()) {
             addRenderableWidget(Button.builder(Component.literal("Open schematics"), button -> switchTab(1))
                     .bounds(x, topPos + imageHeight - 28, width, 20).build());
         }
+    }
+
+    private static PrestigeNetwork.Action biomeAction(int slot) {
+        return switch (slot) {
+            case 0 -> PrestigeNetwork.Action.SET_BIOME_1;
+            case 1 -> PrestigeNetwork.Action.SET_BIOME_2;
+            case 2 -> PrestigeNetwork.Action.SET_BIOME_3;
+            default -> throw new IllegalArgumentException("invalid biome slot");
+        };
+    }
+
+    private static String nextUniqueBiome(PrestigeNetwork.StatePacket state, int slot, int currentIndex) {
+        for (int offset = 1; offset <= state.biomes().size(); offset++) {
+            String candidate = state.biomes().get(Math.floorMod(currentIndex + offset, state.biomes().size()));
+            boolean usedElsewhere = false;
+            for (int index = 0; index < state.selectedBiomes().size(); index++) {
+                if (index != slot && state.selectedBiomes().get(index).equals(candidate)) { usedElsewhere = true; break; }
+            }
+            if (!usedElsewhere) return candidate;
+        }
+        throw new IllegalStateException("no unused biome preference remains");
     }
 
     private void rebuildPerks(PrestigeNetwork.StatePacket state, int x) {
@@ -176,13 +189,12 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
     }
 
     private void addFreeNode(PrestigeNetwork.StatePacket state, GraphNode node, int x, int y) {
-        boolean unlocked = node.id().equals("free_class_selector") ? hasOriginalSix(state) : hasAllClasses(state);
+        boolean unlocked = hasAllClasses(state);
         Button button = Button.builder(Component.literal((unlocked ? "◆ " : "◇ ") + node.label() + " · FREE"), ignored -> {})
                 .bounds(x, y, graphNodeWidth(node), 30).build();
         button.active = false;
-        button.setTooltip(Tooltip.create(Component.literal(node.id().equals("free_class_selector")
-                ? "Activates automatically when all six world-shaping perks are selected."
-                : "Replaces class selection with a 6-point Embark screen when all six classes are selected.")));
+        button.setTooltip(Tooltip.create(Component.literal(
+                "Replaces class selection with a 6-point Embark screen when all six classes are selected.")));
         addRenderableWidget(button);
     }
 
@@ -192,24 +204,19 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
                 PrestigeNetwork.sendAction(PrestigeNetwork.Action.TOGGLE_PERK, actionPos(), id))
                 .bounds(x, y, width, 30).build();
         button.setTooltip(Tooltip.create(Component.literal(perkDescription(id))));
-        button.active = state.operator() && !state.status().equals("staged") && !state.status().equals("committed");
+        button.active = state.operator() && state.status().equals("draft");
         addRenderableWidget(button);
     }
 
     private static String perkDescription(String id) {
         return switch (id) {
-            case "expanded_attunement" -> "Unlock approved modded temperate spawn biomes.";
-            case "frontier_attunement" -> "Unlock demanding vanilla frontier spawn biomes.";
-            case "safe_arrival" -> "Require solid ground and clear, fluid-free headroom.";
-            case "settled_arrival" -> "Allow landing at the nearest village instead of a biome.";
-            case "fallback_attunement" -> "Choose a second biome if the primary cannot be found.";
-            case "fourth_horizon" -> "Authorize a fourth successor attempt before rollback.";
-            case "class_wayfinder" -> "Unlock the Wayfinder starting class after all six world-shaping perks.";
-            case "class_field_cook" -> "Unlock the Field Cook starting class after all six world-shaping perks.";
-            case "class_rail_scout" -> "Unlock the Rail Scout starting class after all six world-shaping perks.";
-            case "class_flood_runner" -> "Unlock the Flood Runner starting class after all six world-shaping perks.";
-            case "class_market_runner" -> "Unlock the Market Runner starting class after all six world-shaping perks.";
-            case "class_trail_wrangler" -> "Unlock the Trail Wrangler starting class after all six world-shaping perks.";
+            case "biome_selection" -> "Choose up to three ordered spawn-biome preferences for each successor.";
+            case "class_wayfinder" -> "Unlock the Wayfinder starting class after Biome Selection.";
+            case "class_field_cook" -> "Unlock the Field Cook starting class after Biome Selection.";
+            case "class_rail_scout" -> "Unlock the Rail Scout starting class after Biome Selection.";
+            case "class_flood_runner" -> "Unlock the Flood Runner starting class after Biome Selection.";
+            case "class_market_runner" -> "Unlock the Market Runner starting class after Biome Selection.";
+            case "class_trail_wrangler" -> "Unlock the Trail Wrangler starting class after Biome Selection.";
             case "embark_budget_i" -> "Increase the Embark budget from 6 to 9 points.";
             case "embark_budget_ii" -> "Increase the Embark budget from 9 to 12 points.";
             case "embark_budget_iii" -> "Increase the Embark budget from 12 to 15 points.";
@@ -219,13 +226,8 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
         };
     }
 
-    private static boolean hasOriginalSix(PrestigeNetwork.StatePacket state) {
-        return state.perks().containsAll(java.util.List.of("expanded_attunement", "frontier_attunement", "safe_arrival",
-                "settled_arrival", "fallback_attunement", "fourth_horizon"));
-    }
-
     private static boolean hasAllClasses(PrestigeNetwork.StatePacket state) {
-        return hasOriginalSix(state) && state.perks().containsAll(java.util.List.of("class_wayfinder", "class_field_cook",
+        return state.perks().contains("biome_selection") && state.perks().containsAll(java.util.List.of("class_wayfinder", "class_field_cook",
                 "class_rail_scout", "class_flood_runner", "class_market_runner", "class_trail_wrangler"));
     }
 
@@ -297,13 +299,9 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
     }
 
     private void drawGraphEdges(GuiGraphics graphics) {
-        edge(graphics, "expanded_attunement", "frontier_attunement");
-        edge(graphics, "safe_arrival", "settled_arrival");
-        edge(graphics, "fallback_attunement", "fourth_horizon");
-        for (String id : java.util.List.of("frontier_attunement", "settled_arrival", "fourth_horizon")) edge(graphics, id, "free_class_selector");
         for (String id : java.util.List.of("class_wayfinder", "class_field_cook", "class_rail_scout",
                 "class_flood_runner", "class_market_runner", "class_trail_wrangler")) {
-            edge(graphics, "free_class_selector", id);
+            edge(graphics, "biome_selection", id);
             edge(graphics, id, "free_embark");
         }
         edge(graphics, "free_embark", "embark_budget_i");

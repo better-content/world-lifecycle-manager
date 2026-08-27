@@ -14,28 +14,20 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
 /** Server-authoritative paid prestige graph and its closed transaction contracts. */
 public final class PrestigePerks {
-    public static final String ACTIVE_MAGIC = "BC_PRESTIGE_PERKS_V1";
-    public static final String DRAFT_MAGIC = "BC_PRESTIGE_PERK_DRAFT_V1";
-    public static final String STAGED_MAGIC = "BC_PRESTIGE_STAGED_PERKS_V1";
-    public static final String RESET_MAGIC = "BC_PRESTIGE_RESET_PERKS_V1";
-    public static final String HEALTH_MAGIC = "BC_PRESTIGE_PERK_HEALTH_V2";
-    public static final int SAFE_RADIUS = 128;
-    public static final int VILLAGE_RADIUS_CHUNKS = 128;
-    public static final int MAX_POINTS = 17;
+    public static final String ACTIVE_MAGIC = "BC_PRESTIGE_PERKS_V2";
+    public static final String DRAFT_MAGIC = "BC_PRESTIGE_PERK_DRAFT_V2";
+    public static final String STAGED_MAGIC = "BC_PRESTIGE_STAGED_PERKS_V2";
+    public static final String RESET_MAGIC = "BC_PRESTIGE_RESET_PERKS_V2";
+    public static final String HEALTH_MAGIC = "BC_PRESTIGE_PERK_HEALTH_V3";
+    public static final int MAX_POINTS = 12;
 
     public enum Perk {
-        EXPANDED_ATTUNEMENT("expanded_attunement"),
-        FRONTIER_ATTUNEMENT("frontier_attunement"),
-        SAFE_ARRIVAL("safe_arrival"),
-        SETTLED_ARRIVAL("settled_arrival"),
-        FALLBACK_ATTUNEMENT("fallback_attunement"),
-        FOURTH_HORIZON("fourth_horizon"),
+        BIOME_SELECTION("biome_selection"),
         CLASS_WAYFINDER("class_wayfinder"),
         CLASS_FIELD_COOK("class_field_cook"),
         CLASS_RAIL_SCOUT("class_rail_scout"),
@@ -57,10 +49,6 @@ public final class PrestigePerks {
         }
     }
 
-    private static final EnumSet<Perk> ORIGINAL = EnumSet.of(
-            Perk.EXPANDED_ATTUNEMENT, Perk.FRONTIER_ATTUNEMENT,
-            Perk.SAFE_ARRIVAL, Perk.SETTLED_ARRIVAL,
-            Perk.FALLBACK_ATTUNEMENT, Perk.FOURTH_HORIZON);
     private static final EnumSet<Perk> CLASSES = EnumSet.of(
             Perk.CLASS_WAYFINDER, Perk.CLASS_FIELD_COOK, Perk.CLASS_RAIL_SCOUT,
             Perk.CLASS_FLOOD_RUNNER, Perk.CLASS_MARKET_RUNNER, Perk.CLASS_TRAIL_WRANGLER);
@@ -72,13 +60,6 @@ public final class PrestigePerks {
             Perk.CLASS_MARKET_RUNNER, "market_runner",
             Perk.CLASS_TRAIL_WRANGLER, "trail_wrangler");
 
-    public enum Landing { BIOME, VILLAGE;
-        static Landing parse(String value) {
-            try { return valueOf(value.toUpperCase(Locale.ROOT)); }
-            catch (Exception error) { throw new IllegalArgumentException("landing mode must be biome or village"); }
-        }
-    }
-
     public enum OnboardingMode { SPAWN_ONLY, CLASS, EMBARK }
 
     /** Stable API consumed by Class Selector. */
@@ -87,24 +68,23 @@ public final class PrestigePerks {
         public OnboardingPolicy { unlockedClassIds = Set.copyOf(unlockedClassIds); }
     }
 
-    public record Build(String lineageId, long baseGeneration, EnumSet<Perk> perks, Landing landing,
-                        String fallbackBiome) {
+    public record Build(String lineageId, long baseGeneration, EnumSet<Perk> perks, List<String> biomes) {
         public Build {
             perks = perks.isEmpty() ? EnumSet.noneOf(Perk.class) : EnumSet.copyOf(perks);
-            fallbackBiome = fallbackBiome == null ? "" : fallbackBiome;
+            biomes = biomes == null ? List.of() : List.copyOf(biomes);
         }
         public long targetGeneration() { return Math.addExact(baseGeneration, 1); }
         public int budget() { return (int) Math.min(MAX_POINTS, targetGeneration()); }
         public boolean has(Perk perk) { return perks.contains(perk); }
         public List<String> ids() { return perks.stream().map(Perk::id).toList(); }
-        public boolean classSelectorUnlocked() { return perks.containsAll(ORIGINAL); }
-        public boolean embarkUnlocked() { return classSelectorUnlocked() && perks.containsAll(CLASSES); }
-        public int successorAttempts() { return has(Perk.FOURTH_HORIZON) ? 4 : 3; }
+        public boolean classSelectorUnlocked() { return perks.stream().anyMatch(CLASSES::contains); }
+        public boolean embarkUnlocked() { return perks.containsAll(CLASSES); }
+        public int successorAttempts() { return 8; }
         public OnboardingPolicy onboardingPolicy() {
             if (embarkUnlocked()) {
                 int quota = has(Perk.EMBARK_BUDGET_IV) ? 18 : has(Perk.EMBARK_BUDGET_III) ? 15
                         : has(Perk.EMBARK_BUDGET_II) ? 12 : has(Perk.EMBARK_BUDGET_I) ? 9 : 6;
-                return new OnboardingPolicy(OnboardingMode.EMBARK, Set.of(), quota,
+                return new OnboardingPolicy(OnboardingMode.EMBARK, Set.copyOf(CLASS_IDS.values()), quota,
                         has(Perk.SCHEMATICANNON_START));
             }
             if (classSelectorUnlocked()) {
@@ -118,11 +98,11 @@ public final class PrestigePerks {
 
     private PrestigePerks() {}
 
-    public static Path activePath(MinecraftServer server) { return PrestigeService.state(server).resolve("perks-v1.tsv"); }
-    public static Path draftPath(MinecraftServer server) { return PrestigeService.control(server).resolve("perk-draft-v1.tsv"); }
-    public static Path stagedPath(MinecraftServer server) { return PrestigeService.control(server).resolve("staged-perks-v1.tsv"); }
-    public static Path resetPath(MinecraftServer server) { return PrestigeService.control(server).resolve("reset-perks-v1.tsv"); }
-    public static Path healthPath(MinecraftServer server) { return PrestigeService.control(server).resolve("perk-health-v2.tsv"); }
+    public static Path activePath(MinecraftServer server) { return PrestigeService.state(server).resolve("perks-v2.tsv"); }
+    public static Path draftPath(MinecraftServer server) { return PrestigeService.control(server).resolve("perk-draft-v2.tsv"); }
+    public static Path stagedPath(MinecraftServer server) { return PrestigeService.control(server).resolve("staged-perks-v2.tsv"); }
+    public static Path resetPath(MinecraftServer server) { return PrestigeService.control(server).resolve("reset-perks-v2.tsv"); }
+    public static Path healthPath(MinecraftServer server) { return PrestigeService.control(server).resolve("perk-health-v3.tsv"); }
 
     public static OnboardingPolicy activeOnboardingPolicy(MinecraftServer server) throws IOException {
         PrestigeContracts.Lineage lineage = PrestigeService.lineage(server);
@@ -131,14 +111,14 @@ public final class PrestigePerks {
     }
 
     static OnboardingPolicy onboardingPolicy(EnumSet<Perk> paid) {
-        return new Build("lineage-policy", 0, paid, Landing.BIOME, "").onboardingPolicy();
+        return new Build("lineage-policy", 0, paid, List.of()).onboardingPolicy();
     }
 
     public static Build draft(MinecraftServer server) throws IOException {
         PrestigeContracts.Lineage lineage = PrestigeService.lineage(server);
         Path path = draftPath(server);
         if (Files.isRegularFile(path)) return readBuild(path, DRAFT_MAGIC, lineage, lineage.generation(), false);
-        return new Build(lineage.lineageId(), lineage.generation(), readActive(server, lineage), Landing.BIOME, "");
+        return new Build(lineage.lineageId(), lineage.generation(), readActive(server, lineage), List.of());
     }
 
     public static Build staged(MinecraftServer server) throws IOException {
@@ -150,16 +130,12 @@ public final class PrestigePerks {
         Build build = readBuild(resetPath(server), RESET_MAGIC, new PrestigeContracts.Lineage(
                 successor.lineageId(), successor.baseGeneration(), successor.baseGeneration()), successor.baseGeneration(), true);
         Map<String, String> fields = readFields(resetPath(server), RESET_MAGIC,
-                List.of("lineage", "base_generation", "target_generation", "transaction", "perks", "landing", "fallback"));
+                List.of("lineage", "base_generation", "target_generation", "transaction", "perks", "biome_1", "biome_2", "biome_3"));
         if (!fields.get("transaction").equals(successor.transactionId())) {
             throw new IllegalStateException("perk snapshot transaction does not match successor");
         }
-        List<String> allowed = PrestigeService.allowedBiomes(server, build);
-        if (!allowed.contains(successor.biome())) throw new IllegalStateException("perk snapshot primary biome is not unlocked");
-        if (!build.fallbackBiome().isEmpty() && (!allowed.contains(build.fallbackBiome())
-                || build.fallbackBiome().equals(successor.biome()))) {
-            throw new IllegalStateException("perk snapshot fallback biome is not distinct and unlocked");
-        }
+        if (!build.biomes().equals(successor.biomes())) throw new IllegalStateException("perk snapshot biome preferences do not match successor");
+        validateBuild(server, build);
         return build;
     }
 
@@ -174,15 +150,14 @@ public final class PrestigePerks {
             selected.remove(perk);
             try { validatePaidSet(selected, current.budget()); }
             catch (IllegalArgumentException error) { throw new IllegalStateException("refund dependent perks first: " + error.getMessage()); }
-            if (perk == Perk.SETTLED_ARRIVAL && current.landing() == Landing.VILLAGE) throw new IllegalStateException("switch landing back to biome first");
-            if (perk == Perk.FALLBACK_ATTUNEMENT && !current.fallbackBiome().isEmpty()) throw new IllegalStateException("clear the fallback biome first");
+            if (perk == Perk.BIOME_SELECTION && !current.biomes().isEmpty()) throw new IllegalStateException("clear biome preferences first");
         } else {
             if (selected.size() >= current.budget()) throw new IllegalStateException("no prestige perk points remain");
             selected.add(perk);
             validatePaidSet(selected, current.budget());
         }
         writeBuild(draftPath(server), DRAFT_MAGIC, new Build(current.lineageId(), current.baseGeneration(),
-                selected, current.landing(), current.fallbackBiome()), null);
+                selected, current.biomes()), null);
     }
 
     public static void allocate(MinecraftServer server, String id) throws IOException {
@@ -197,88 +172,81 @@ public final class PrestigePerks {
         toggle(server, id);
     }
 
-    public static void setLanding(ServerPlayer player, String value) throws IOException { requireEditable(player); setLanding(player.server, value); }
-
-    public static void setLanding(MinecraftServer server, String value) throws IOException {
+    public static void setBiomes(MinecraftServer server, List<String> biomes) throws IOException {
         requireEditable(server);
         Build current = draft(server);
-        Landing landing = Landing.parse(value);
-        if (landing == Landing.VILLAGE && !current.has(Perk.SETTLED_ARRIVAL)) throw new IllegalStateException("Settled Arrival is not unlocked");
+        if (!biomes.isEmpty() && !current.has(Perk.BIOME_SELECTION)) throw new IllegalStateException("Biome Selection is not unlocked");
+        if (!biomes.isEmpty()) PrestigeContracts.validateBiomes(biomes);
         writeBuild(draftPath(server), DRAFT_MAGIC, new Build(current.lineageId(), current.baseGeneration(),
-                current.perks(), landing, landing == Landing.VILLAGE ? "" : current.fallbackBiome()), null);
+                current.perks(), biomes), null);
     }
 
-    public static void setFallback(ServerPlayer player, String value) throws IOException { requireEditable(player); setFallback(player.server, value); }
-
-    public static void setFallback(MinecraftServer server, String value) throws IOException {
-        requireEditable(server);
-        Build current = draft(server);
-        if (!current.has(Perk.FALLBACK_ATTUNEMENT)) throw new IllegalStateException("Fallback Attunement is not unlocked");
-        if (current.landing() != Landing.BIOME) throw new IllegalStateException("fallback biome requires biome landing");
-        String biome = value.equals("clear") ? "" : value;
-        if (!biome.isEmpty()) PrestigeContracts.validateBiome(biome);
-        writeBuild(draftPath(server), DRAFT_MAGIC, new Build(current.lineageId(), current.baseGeneration(),
-                current.perks(), current.landing(), biome), null);
-    }
-
-    public static void stage(MinecraftServer server, String primaryBiome) throws IOException {
-        Build build = draft(server); validateBuild(server, build, primaryBiome); writeBuild(stagedPath(server), STAGED_MAGIC, build, null);
+    public static void stage(MinecraftServer server, List<String> biomes) throws IOException {
+        Build build = draft(server);
+        if (!build.biomes().equals(biomes)) build = new Build(build.lineageId(), build.baseGeneration(), build.perks(), biomes);
+        validateBuild(server, build); writeBuild(stagedPath(server), STAGED_MAGIC, build, null);
     }
     public static void cancel(MinecraftServer server) throws IOException { Files.deleteIfExists(stagedPath(server)); }
-    public static void commit(MinecraftServer server, String transaction, String primaryBiome) throws IOException {
-        Build build = staged(server); validateBuild(server, build, primaryBiome); writeBuild(resetPath(server), RESET_MAGIC, build, transaction);
+    public static void commit(MinecraftServer server, String transaction, List<String> biomes) throws IOException {
+        Build build = staged(server);
+        if (!build.biomes().equals(biomes)) throw new IllegalStateException("staged biome preferences changed");
+        validateBuild(server, build); writeBuild(resetPath(server), RESET_MAGIC, build, transaction);
     }
 
     public static void writeHealth(MinecraftServer server, PrestigeContracts.Successor successor, Build build,
-                                   String resolvedTarget, BlockPos landing, boolean safe) throws IOException {
+                                   String resolvedBiome, BlockPos spawn) throws IOException {
+        if (!build.biomes().equals(successor.biomes())) throw new IllegalArgumentException("perk health preferences do not match successor");
+        if (!resolvedBiome.equals("-") && !successor.biomes().contains(resolvedBiome)) {
+            throw new IllegalArgumentException("perk health resolved biome is not requested");
+        }
         writeAtomic(healthPath(server), List.of(HEALTH_MAGIC,
                 "lineage\t" + successor.lineageId(), "base_generation\t" + successor.baseGeneration(),
                 "target_generation\t" + successor.targetGeneration(), "transaction\t" + successor.transactionId(),
-                "attempt\t" + successor.attempt(), "landing\t" + build.landing().name().toLowerCase(Locale.ROOT),
-                "resolved_target\t" + resolvedTarget, "landing_x\t" + landing.getX(),
-                "landing_y\t" + landing.getY(), "landing_z\t" + landing.getZ(), "safe\t" + safe));
+                "attempt\t" + successor.attempt(), "resolved_biome\t" + resolvedBiome,
+                "spawn_x\t" + spawn.getX(), "spawn_y\t" + spawn.getY(), "spawn_z\t" + spawn.getZ()));
     }
 
     public static List<String> allowedBiomes(MinecraftServer server, Build build) throws IOException {
-        List<String> result = new ArrayList<>(readBiomeFile(server, "world_lifecycle_manager-biomes.txt"));
-        if (build.has(Perk.EXPANDED_ATTUNEMENT)) result.addAll(readBiomeFile(server, "world_lifecycle_manager-biomes-expanded.txt"));
-        if (build.has(Perk.FRONTIER_ATTUNEMENT)) result.addAll(readBiomeFile(server, "world_lifecycle_manager-biomes-frontier.txt"));
-        return result.stream().distinct().sorted().toList();
+        return new ArrayList<>(readBiomeFile(server, "world_lifecycle_manager-biomes.txt")).stream().distinct().sorted().toList();
     }
 
     private static List<String> readBiomeFile(MinecraftServer server, String name) throws IOException {
         Path path = server.getServerDirectory().toPath().toAbsolutePath().normalize().resolve("config").resolve(name);
         if (!Files.isRegularFile(path)) throw new IllegalStateException("missing config/" + name);
-        List<String> values = Files.readAllLines(path, StandardCharsets.UTF_8).stream().map(String::strip)
-                .filter(value -> !value.isEmpty() && !value.startsWith("#")).distinct().toList();
-        PrestigeLimits.requireSize(name, values, PrestigeLimits.MAX_BIOMES);
-        for (String value : values) PrestigeContracts.validateBiome(value);
+        List<String> values = parseBiomeLines(name, Files.readAllLines(path, StandardCharsets.UTF_8));
         return values;
     }
 
-    private static void validateBuild(MinecraftServer server, Build build, String primaryBiome) throws IOException {
+    static List<String> parseBiomeLines(String name, List<String> lines) {
+        List<String> values = lines.stream().map(String::strip)
+                .filter(value -> !value.isEmpty() && !value.startsWith("#")).toList();
+        PrestigeLimits.requireSize(name, values, PrestigeLimits.MAX_BIOMES);
+        if (values.isEmpty()) throw new IllegalArgumentException(name + " is empty");
+        if (new java.util.LinkedHashSet<>(values).size() != values.size()) throw new IllegalArgumentException(name + " contains duplicate biome rows");
+        for (String value : values) PrestigeContracts.validateBiome(value);
+        return List.copyOf(values);
+    }
+
+    private static void validateBuild(MinecraftServer server, Build build) throws IOException {
         validateShape(build);
         List<String> allowed = allowedBiomes(server, build);
-        if (!allowed.contains(primaryBiome)) throw new IllegalArgumentException("primary biome is not unlocked");
-        if (!build.fallbackBiome().isEmpty()) {
-            if (!build.has(Perk.FALLBACK_ATTUNEMENT) || build.landing() != Landing.BIOME) throw new IllegalArgumentException("fallback biome is not available");
-            if (build.fallbackBiome().equals(primaryBiome) || !allowed.contains(build.fallbackBiome())) throw new IllegalArgumentException("fallback biome must be distinct and unlocked");
-        }
+        if (!build.has(Perk.BIOME_SELECTION)) throw new IllegalArgumentException("Biome Selection must be allocated before staging");
+        PrestigeContracts.validateBiomes(build.biomes());
+        if (!allowed.containsAll(build.biomes())) throw new IllegalArgumentException("biome preference is not allowlisted");
     }
 
     static void validateShape(Build build) {
         if (build.baseGeneration() == Long.MAX_VALUE) throw new IllegalArgumentException("prestige generation is exhausted");
         validatePaidSet(build.perks(), build.budget());
-        if (build.landing() == Landing.VILLAGE && !build.has(Perk.SETTLED_ARRIVAL)) throw new IllegalArgumentException("village landing requires Settled Arrival");
-        if (!build.fallbackBiome().isEmpty() && (!build.has(Perk.FALLBACK_ATTUNEMENT) || build.landing() != Landing.BIOME)) throw new IllegalArgumentException("fallback biome is not available");
+        if (!build.biomes().isEmpty()) {
+            if (!build.has(Perk.BIOME_SELECTION)) throw new IllegalArgumentException("biome preferences require Biome Selection");
+            PrestigeContracts.validateBiomes(build.biomes());
+        }
     }
 
     static void validatePaidSet(EnumSet<Perk> perks, int budget) {
         if (perks.size() > budget) throw new IllegalArgumentException("perk build exceeds its prestige-point budget");
-        require(perks, Perk.FRONTIER_ATTUNEMENT, Perk.EXPANDED_ATTUNEMENT);
-        require(perks, Perk.SETTLED_ARRIVAL, Perk.SAFE_ARRIVAL);
-        require(perks, Perk.FOURTH_HORIZON, Perk.FALLBACK_ATTUNEMENT);
-        for (Perk classPerk : CLASSES) if (perks.contains(classPerk) && !perks.containsAll(ORIGINAL)) throw new IllegalArgumentException(classPerk.id() + " requires all six world-shaping perks");
+        for (Perk perk : perks) if (perk != Perk.BIOME_SELECTION && !perks.contains(Perk.BIOME_SELECTION)) throw new IllegalArgumentException(perk.id() + " requires biome_selection");
         for (Perk advanced : List.of(Perk.EMBARK_BUDGET_I, Perk.EMBARK_BUDGET_II, Perk.EMBARK_BUDGET_III, Perk.EMBARK_BUDGET_IV, Perk.SCHEMATICANNON_START)) {
             if (perks.contains(advanced) && !perks.containsAll(CLASSES)) throw new IllegalArgumentException(advanced.id() + " requires all six classes");
         }
@@ -298,7 +266,7 @@ public final class PrestigePerks {
         requireEditable(player.server);
     }
     private static void requireEditable(MinecraftServer server) {
-        if (Files.exists(stagedPath(server)) || Files.exists(PrestigeService.control(server).resolve("reset-request-v4.tsv"))) throw new IllegalStateException("perk build is locked by a staged reset");
+        if (Files.exists(stagedPath(server)) || Files.exists(PrestigeService.control(server).resolve("reset-request-v5.tsv"))) throw new IllegalStateException("perk build is locked by a staged reset");
     }
 
     private static EnumSet<Perk> readActive(MinecraftServer server, PrestigeContracts.Lineage lineage) throws IOException {
@@ -316,13 +284,13 @@ public final class PrestigePerks {
 
     private static Build readBuild(Path path, String magic, PrestigeContracts.Lineage lineage, long baseGeneration, boolean transaction) throws IOException {
         List<String> keys = transaction
-                ? List.of("lineage", "base_generation", "target_generation", "transaction", "perks", "landing", "fallback")
-                : List.of("lineage", "base_generation", "target_generation", "perks", "landing", "fallback");
+                ? List.of("lineage", "base_generation", "target_generation", "transaction", "perks", "biome_1", "biome_2", "biome_3")
+                : List.of("lineage", "base_generation", "target_generation", "perks", "biome_1", "biome_2", "biome_3");
         Map<String, String> fields = readFields(path, magic, keys);
         if (!lineage.lineageId().equals(fields.get("lineage")) || parseLong(fields, "base_generation") != baseGeneration
                 || baseGeneration == Long.MAX_VALUE || parseLong(fields, "target_generation") != baseGeneration + 1) throw new IllegalStateException("perk build identity is stale");
         if (transaction) PrestigeContracts.validateId("transaction ID", fields.get("transaction"));
-        Build build = new Build(lineage.lineageId(), baseGeneration, parsePerks(fields.get("perks")), Landing.parse(fields.get("landing")), decodeOptional(fields.get("fallback")));
+        Build build = new Build(lineage.lineageId(), baseGeneration, parsePerks(fields.get("perks")), decodeBiomes(fields));
         validateShape(build);
         return build;
     }
@@ -338,8 +306,9 @@ public final class PrestigePerks {
         List<String> lines = new ArrayList<>(List.of(magic, "lineage\t" + build.lineageId(), "base_generation\t" + build.baseGeneration(), "target_generation\t" + build.targetGeneration()));
         if (transaction != null) { PrestigeContracts.validateId("transaction ID", transaction); lines.add("transaction\t" + transaction); }
         lines.add("perks\t" + (build.ids().isEmpty() ? "-" : String.join(",", build.ids())));
-        lines.add("landing\t" + build.landing().name().toLowerCase(Locale.ROOT));
-        lines.add("fallback\t" + (build.fallbackBiome().isEmpty() ? "-" : build.fallbackBiome()));
+        lines.add("biome_1\t" + encodeBiome(build.biomes(), 0));
+        lines.add("biome_2\t" + encodeBiome(build.biomes(), 1));
+        lines.add("biome_3\t" + encodeBiome(build.biomes(), 2));
         writeAtomic(path, lines);
     }
 
@@ -359,7 +328,20 @@ public final class PrestigePerks {
         try { long value = Long.parseLong(fields.get(key)); if (value < 0) throw new NumberFormatException(); return value; }
         catch (Exception error) { throw new IllegalArgumentException("invalid prestige perk " + key); }
     }
-    private static String decodeOptional(String value) { return value.equals("-") ? "" : value; }
+    private static List<String> decodeBiomes(Map<String, String> fields) {
+        List<String> result = new ArrayList<>();
+        for (int index = 1; index <= 3; index++) {
+            String value = fields.get("biome_" + index);
+            if (value.equals("-")) {
+                for (int later = index + 1; later <= 3; later++) if (!fields.get("biome_" + later).equals("-")) throw new IllegalArgumentException("biome preferences must be contiguous");
+                break;
+            }
+            result.add(value);
+        }
+        if (!result.isEmpty()) PrestigeContracts.validateBiomes(result);
+        return List.copyOf(result);
+    }
+    private static String encodeBiome(List<String> biomes, int index) { return index < biomes.size() ? biomes.get(index) : "-"; }
 
     private static void writeAtomic(Path path, List<String> lines) throws IOException {
         Files.createDirectories(path.getParent());

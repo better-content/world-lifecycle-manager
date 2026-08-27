@@ -3,8 +3,6 @@ package com.bettercontent.worldlifecyclemanager;
 import com.mojang.datafixers.util.Pair;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
-import net.minecraft.tags.BlockTags;
-import net.minecraft.tags.StructureTags;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.arguments.EntityArgument;
@@ -53,8 +51,10 @@ public final class PrestigeCoordinator {
                 .then(Commands.literal("status").executes(context -> {
                     try {
                         var lineage = PrestigeService.lineage(context.getSource().getServer());
+                        var build = PrestigePerks.draft(context.getSource().getServer());
                         context.getSource().sendSuccess(() -> Component.literal("Prestige generation=" + lineage.generation()
-                                + " total=" + lineage.totalPrestiges()), false);
+                                + " total=" + lineage.totalPrestiges() + " status=" + prestigeStatus(context.getSource().getServer())
+                                + " biomes=" + (build.biomes().isEmpty() ? "-" : String.join(",", build.biomes()))), false);
                         return 1;
                     } catch (Exception error) {
                         context.getSource().sendFailure(Component.literal("Prestige status failed: " + error.getMessage()));
@@ -90,23 +90,13 @@ public final class PrestigeCoordinator {
                                 .then(Commands.argument("perk", StringArgumentType.word()).executes(context -> perkMutation(context, true))))
                         .then(Commands.literal("refund").requires(source -> source.hasPermission(4))
                                 .then(Commands.argument("perk", StringArgumentType.word()).executes(context -> perkMutation(context, false)))))
-                .then(Commands.literal("landing").requires(source -> source.hasPermission(4))
-                        .then(Commands.argument("mode", StringArgumentType.word()).executes(context -> {
-                            try { PrestigePerks.setLanding(context.getSource().getServer(), StringArgumentType.getString(context, "mode")); return 1; }
-                            catch (Exception error) { context.getSource().sendFailure(Component.literal("Landing selection failed: " + error.getMessage())); return 0; }
-                        })))
-                .then(Commands.literal("fallback").requires(source -> source.hasPermission(4))
-                        .then(Commands.argument("biome-or-clear", StringArgumentType.greedyString()).executes(context -> {
-                            try { PrestigePerks.setFallback(context.getSource().getServer(), StringArgumentType.getString(context, "biome-or-clear")); return 1; }
-                            catch (Exception error) { context.getSource().sendFailure(Component.literal("Fallback selection failed: " + error.getMessage())); return 0; }
-                        })))
                 .then(Commands.literal("select").requires(source -> source.hasPermission(4))
-                        .then(Commands.argument("biome", StringArgumentType.greedyString()).executes(context -> {
+                        .then(Commands.argument("biomes", StringArgumentType.greedyString()).executes(context -> {
                             try {
-                                String biome = StringArgumentType.getString(context, "biome");
-                                PrestigeService.saveDraft(context.getSource().getServer(), biome, "Operator");
+                                java.util.List<String> biomes = parseBiomeArguments(StringArgumentType.getString(context, "biomes"));
+                                PrestigeService.saveDraft(context.getSource().getServer(), biomes, "Operator");
                                 context.getSource().sendSuccess(() -> Component.literal(
-                                        "Selected Prestige biome " + biome + "; stage with /world_lifecycle_manager stage"), true);
+                                        "Selected Prestige biomes " + String.join(" > ", biomes) + "; stage with /world_lifecycle_manager stage"), true);
                                 return 1;
                             } catch (Exception error) {
                                 context.getSource().sendFailure(Component.literal("Prestige selection failed: " + error.getMessage()));
@@ -152,7 +142,7 @@ public final class PrestigeCoordinator {
                 .then(Commands.literal("recovery").requires(source -> source.hasPermission(4))
                         .then(Commands.literal("cancel-staged").executes(context -> {
                             try {
-                                Files.deleteIfExists(PrestigeService.control(context.getSource().getServer()).resolve("staged-request-v4.tsv"));
+                                Files.deleteIfExists(PrestigeService.control(context.getSource().getServer()).resolve("staged-request-v5.tsv"));
                                 PrestigePerks.cancel(context.getSource().getServer());
                                 context.getSource().sendSuccess(() -> Component.literal("Cancelled staged prestige request"), true);
                                 return 1;
@@ -181,7 +171,7 @@ public final class PrestigeCoordinator {
     public static void onServerStarted(ServerStartedEvent event) {
         MinecraftServer server = event.getServer();
         PrestigeNetwork.tickSync(server);
-        Path successorPath = PrestigeService.control(server).resolve("successor-request-v4.tsv");
+        Path successorPath = PrestigeService.control(server).resolve("successor-request-v5.tsv");
         if (!Files.isRegularFile(successorPath)) return;
         try {
             PrestigeContracts.Successor successor = PrestigeContracts.readSuccessor(successorPath);
@@ -209,10 +199,10 @@ public final class PrestigeCoordinator {
             if (!Files.isRegularFile(server.getWorldPath(LevelResource.LEVEL_DATA_FILE))) {
                 throw new IllegalStateException("successor level.dat is missing");
             }
-            PrestigeContracts.writeHealth(PrestigeService.control(server).resolve("health-result-v4.tsv"), successor,
-                    level.getSeed(), actualBiome, PrestigeService.worldName(server), fresh, foundExact);
-            PrestigePerks.writeHealth(server, successor, perks, foundExact ? landing.resolvedTarget() : "none",
-                    spawn, foundExact && landing.safe());
+            String resolvedBiome = foundExact ? landing.resolvedBiome() : "-";
+            PrestigeContracts.writeHealth(PrestigeService.control(server).resolve("health-result-v5.tsv"), successor,
+                    level.getSeed(), resolvedBiome, actualBiome, PrestigeService.worldName(server), fresh, foundExact);
+            PrestigePerks.writeHealth(server, successor, perks, resolvedBiome, spawn);
             server.sendSystemMessage(Component.literal("Prestige successor health published for " + successor.transactionId()
                     + " biome=" + actualBiome));
         } catch (Exception error) {
@@ -220,7 +210,7 @@ public final class PrestigeCoordinator {
         }
     }
 
-    private record LandingResult(BlockPos pos, String resolvedTarget, boolean safe) {}
+    private record LandingResult(BlockPos pos, String resolvedBiome) {}
 
     static void configureSuccessorSpawn(MinecraftServer server, ServerLevel level, BlockPos spawn) {
         ChunkPos previous = new ChunkPos(level.getSharedSpawnPos());
@@ -230,36 +220,20 @@ public final class PrestigeCoordinator {
         }
         level.setDefaultSpawnPos(spawn, 0.0F);
         level.getChunkSource().addRegionTicket(TicketType.START, target, 11, Unit.INSTANCE);
-        // The landing resolver has already proven this exact block safe. Avoid vanilla's random
-        // 21x21 respawn search synchronously loading neighboring C2ME chunks during first login.
+        // Avoid vanilla's random 21x21 respawn search synchronously loading neighboring C2ME chunks.
         level.getGameRules().getRule(GameRules.RULE_SPAWN_RADIUS).set(0, server);
     }
 
     private static LandingResult resolveLanding(ServerLevel level, PrestigeContracts.Successor successor,
                                                 PrestigePerks.Build perks) {
-        BlockPos candidate;
-        String target;
-        if (perks.landing() == PrestigePerks.Landing.VILLAGE) {
-            BlockPos found = level.findNearestMapStructure(StructureTags.VILLAGE,
-                    level.getSharedSpawnPos(), PrestigePerks.VILLAGE_RADIUS_CHUNKS, false);
-            if (found == null) return null;
-            candidate = found;
-            target = "village";
-        } else {
-            target = successor.biome();
+        for (String target : successor.biomes()) {
             Pair<BlockPos, Holder<Biome>> found = findBiome(level, target);
-            if (found == null && !perks.fallbackBiome().isEmpty()) {
-                target = perks.fallbackBiome();
-                found = findBiome(level, target);
-            }
-            if (found == null) return null;
-            candidate = found.getFirst();
+            if (found == null) continue;
+            BlockPos candidate = found.getFirst();
+            int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, candidate.getX(), candidate.getZ());
+            return new LandingResult(new BlockPos(candidate.getX(), y, candidate.getZ()), target);
         }
-        int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, candidate.getX(), candidate.getZ());
-        BlockPos surface = new BlockPos(candidate.getX(), y, candidate.getZ());
-        if (!perks.has(PrestigePerks.Perk.SAFE_ARRIVAL)) return new LandingResult(surface, target, false);
-        BlockPos safe = findSafe(level, surface, perks.landing() == PrestigePerks.Landing.BIOME ? target : null);
-        return safe == null ? null : new LandingResult(safe, target, true);
+        return null;
     }
 
     private static Pair<BlockPos, Holder<Biome>> findBiome(ServerLevel level, String id) {
@@ -268,33 +242,18 @@ public final class PrestigeCoordinator {
                 level.getSharedSpawnPos(), 16_384, 32, 64);
     }
 
-    private static BlockPos findSafe(ServerLevel level, BlockPos center, String requiredBiome) {
-        for (int radius = 0; radius <= PrestigePerks.SAFE_RADIUS; radius++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                BlockPos north = safeAt(level, center.getX() + dx, center.getZ() - radius, requiredBiome);
-                if (north != null) return north;
-                if (radius > 0) { BlockPos south = safeAt(level, center.getX() + dx, center.getZ() + radius, requiredBiome); if (south != null) return south; }
-            }
-            for (int dz = -radius + 1; dz < radius; dz++) {
-                BlockPos west = safeAt(level, center.getX() - radius, center.getZ() + dz, requiredBiome);
-                if (west != null) return west;
-                if (radius > 0) { BlockPos east = safeAt(level, center.getX() + radius, center.getZ() + dz, requiredBiome); if (east != null) return east; }
-            }
-        }
-        return null;
+    static java.util.List<String> parseBiomeArguments(String input) {
+        String stripped = input == null ? "" : input.strip();
+        java.util.List<String> biomes = stripped.isEmpty() ? java.util.List.of() : java.util.List.of(stripped.split("\\s+"));
+        PrestigeContracts.validateBiomes(biomes);
+        return biomes;
     }
 
-    private static BlockPos safeAt(ServerLevel level, int x, int z, String requiredBiome) {
-        int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-        BlockPos feet = new BlockPos(x, y, z);
-        if (requiredBiome != null && !level.getBiome(feet).unwrapKey().map(key -> key.location().toString().equals(requiredBiome)).orElse(false)) return null;
-        BlockPos floor = feet.below(); var floorState = level.getBlockState(floor);
-        if (!floorState.isFaceSturdy(level, floor, net.minecraft.core.Direction.UP) || floorState.is(BlockTags.LEAVES)
-                || floorState.is(BlockTags.FIRE) || !level.getFluidState(floor).isEmpty()) return null;
-        if (!level.getBlockState(feet).getCollisionShape(level, feet).isEmpty() || !level.getFluidState(feet).isEmpty()) return null;
-        BlockPos head = feet.above();
-        if (!level.getBlockState(head).getCollisionShape(level, head).isEmpty() || !level.getFluidState(head).isEmpty()) return null;
-        return feet;
+    private static String prestigeStatus(MinecraftServer server) {
+        Path control = PrestigeService.control(server);
+        return Files.exists(control.resolve("successor-request-v5.tsv")) ? "successor-starting"
+                : Files.exists(control.resolve("reset-request-v5.tsv")) ? "committed"
+                : Files.exists(control.resolve("staged-request-v5.tsv")) ? "staged" : "draft";
     }
 
     private static int openGui(CommandSourceStack source, ServerPlayer player, int tab) {
@@ -327,11 +286,11 @@ public final class PrestigeCoordinator {
         }
         if (++shutdownPoll < 20) return;
         shutdownPoll = 0;
-        Path shutdownPath = PrestigeService.control(server).resolve("shutdown-request-v4.tsv");
+        Path shutdownPath = PrestigeService.control(server).resolve("shutdown-request-v5.tsv");
         if (!Files.isRegularFile(shutdownPath)) return;
         try {
             String transaction = PrestigeContracts.readShutdownTransaction(shutdownPath);
-            Path activePath = PrestigeService.control(server).resolve("active-successor-process-v1.tsv");
+            Path activePath = PrestigeService.control(server).resolve("active-successor-process-v2.tsv");
             if (Files.isRegularFile(activePath)
                     && PrestigeContracts.readActiveSuccessor(activePath).transactionId().equals(transaction)) {
                 Files.deleteIfExists(shutdownPath);

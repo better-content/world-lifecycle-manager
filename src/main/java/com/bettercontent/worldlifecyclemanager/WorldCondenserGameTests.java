@@ -194,8 +194,8 @@ public final class WorldCondenserGameTests {
         List<String> biomes = IntStream.range(0, PrestigeLimits.MAX_BIOMES)
                 .mapToObj(index -> "fixture:biome_" + index).toList();
         var packet = new PrestigeNetwork.StatePacket(PrestigeNetwork.ViewKind.RESET, "", "draft", "world",
-                BlockPos.ZERO, 2, 1, biomes.get(0), "Builder", true, biomes, List.of(), List.of(),
-                List.of("safe_arrival"), 2, "biome", "");
+                BlockPos.ZERO, 2, 1, List.of(biomes.get(0), biomes.get(1)), "Builder", true,
+                biomes, List.of(), List.of(), List.of("biome_selection"), 2);
         FriendlyByteBuf roundTrip = new FriendlyByteBuf(Unpooled.buffer());
         try {
             PrestigeNetwork.StatePacket.encode(packet, roundTrip);
@@ -216,10 +216,11 @@ public final class WorldCondenserGameTests {
             oversized.writeBlockPos(BlockPos.ZERO);
             oversized.writeLong(0);
             oversized.writeLong(0);
-            oversized.writeUtf("fixture:biome", 256);
-            oversized.writeUtf("Builder", 32);
-            oversized.writeBoolean(false);
-            oversized.writeVarInt(PrestigeLimits.MAX_BIOMES + 1);
+            oversized.writeVarInt(4);
+            oversized.writeUtf("fixture:biome_1", 256);
+            oversized.writeUtf("fixture:biome_2", 256);
+            oversized.writeUtf("fixture:biome_3", 256);
+            oversized.writeUtf("fixture:biome_4", 256);
             try {
                 PrestigeNetwork.StatePacket.decode(oversized);
                 helper.fail("World Condenser accepted an oversized state packet collection");
