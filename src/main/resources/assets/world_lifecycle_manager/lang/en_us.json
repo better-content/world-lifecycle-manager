@@ -1,9 +1,7 @@
 {
   "block.world_lifecycle_manager.world_condenser_hull": "World Condenser Hull",
   "block.world_lifecycle_manager.world_condenser_interface": "World Condenser Interface",
-  "block.world_lifecycle_manager.schematic_mint": "Schematic Mint",
   "screen.world_lifecycle_manager.world_condenser": "World Condenser",
-  "screen.world_lifecycle_manager.schematic_mint": "Schematic Mint",
   "screen.world_lifecycle_manager.substitutions": "Material Substitutions",
   "screen.world_lifecycle_manager.substitutions.empty": "Load a deployed schematic to evaluate its ordinary building blocks.",
   "screen.world_lifecycle_manager.fallback": "Fallback",

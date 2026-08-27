@@ -23,8 +23,6 @@ public final class PrestigeMod {
         PrestigeRegistry.ITEMS.register(modBus);
         PrestigeRegistry.BLOCK_ENTITIES.register(modBus);
         PrestigeRegistry.MENUS.register(modBus);
-        PrestigeRegistry.RECIPE_TYPES.register(modBus);
-        PrestigeRegistry.RECIPE_SERIALIZERS.register(modBus);
         PrestigeNetwork.register();
         SchematicannonSubstitutionNetwork.register();
         modBus.addListener(this::onCreativeTab);
@@ -40,7 +38,6 @@ public final class PrestigeMod {
         if (event.getTabKey().equals(CreativeModeTabs.FUNCTIONAL_BLOCKS)) {
             event.accept(PrestigeRegistry.WORLD_CONDENSER_HULL_ITEM);
             event.accept(PrestigeRegistry.WORLD_CONDENSER_INTERFACE_ITEM);
-            event.accept(PrestigeRegistry.SCHEMATIC_MINT_ITEM);
         }
     }
 
