@@ -150,7 +150,6 @@ public final class PrestigePerks {
             selected.remove(perk);
             try { validatePaidSet(selected, current.budget()); }
             catch (IllegalArgumentException error) { throw new IllegalStateException("refund dependent perks first: " + error.getMessage()); }
-            if (perk == Perk.BIOME_SELECTION && !current.biomes().isEmpty()) throw new IllegalStateException("clear biome preferences first");
         } else {
             if (selected.size() >= current.budget()) throw new IllegalStateException("no prestige perk points remain");
             selected.add(perk);
@@ -175,9 +174,6 @@ public final class PrestigePerks {
     public static void setBiomes(MinecraftServer server, List<String> biomes) throws IOException {
         requireEditable(server);
         Build current = draft(server);
-        if (!biomes.isEmpty() && !current.has(Perk.BIOME_SELECTION)) {
-            throw new IllegalStateException("Biome Selection is not allocated; run /world_lifecycle_manager perks allocate biome_selection first");
-        }
         if (!biomes.isEmpty()) PrestigeContracts.validateBiomes(biomes);
         writeBuild(draftPath(server), DRAFT_MAGIC, new Build(current.lineageId(), current.baseGeneration(),
                 current.perks(), biomes), null);
@@ -232,7 +228,6 @@ public final class PrestigePerks {
     private static void validateBuild(MinecraftServer server, Build build) throws IOException {
         validateShape(build);
         List<String> allowed = allowedBiomes(server, build);
-        if (!build.has(Perk.BIOME_SELECTION)) throw new IllegalArgumentException("Biome Selection must be allocated before staging");
         PrestigeContracts.validateBiomes(build.biomes());
         if (!allowed.containsAll(build.biomes())) throw new IllegalArgumentException("biome preference is not allowlisted");
     }
@@ -241,7 +236,6 @@ public final class PrestigePerks {
         if (build.baseGeneration() == Long.MAX_VALUE) throw new IllegalArgumentException("prestige generation is exhausted");
         validatePaidSet(build.perks(), build.budget());
         if (!build.biomes().isEmpty()) {
-            if (!build.has(Perk.BIOME_SELECTION)) throw new IllegalArgumentException("biome preferences require Biome Selection");
             PrestigeContracts.validateBiomes(build.biomes());
         }
     }

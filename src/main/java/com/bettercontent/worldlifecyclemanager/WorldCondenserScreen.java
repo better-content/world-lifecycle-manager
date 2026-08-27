@@ -91,8 +91,8 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
         for (int slot = 0; slot < 3; slot++) {
             String label = switch (slot) { case 0 -> "Primary"; case 1 -> "Secondary"; default -> "Tertiary"; };
             String selected = slot < state.selectedBiomes().size() ? state.selectedBiomes().get(slot) : "";
-            boolean enabled = state.operator() && state.perks().contains("biome_selection")
-                    && state.status().equals("draft") && (slot == 0 || state.selectedBiomes().size() >= slot);
+            boolean enabled = state.operator() && state.status().equals("draft")
+                    && (slot == 0 || state.selectedBiomes().size() >= slot);
             int buttonWidth = slot == 0 ? width : Math.max(1, width - 70);
             int selectedSlot = slot;
             Button biome = Button.builder(Component.literal(label + ": " + (selected.isEmpty() ? "none" : shortText(selected, 34))), button -> {
@@ -117,7 +117,7 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
                     PrestigeNetwork.sendAction(PrestigeNetwork.Action.STAGE, actionPos(), ""))
                     .bounds(x, y, actionWidth, 20).build();
             stage.active = !menu.remote() && state.status().equals("draft")
-                    && state.perks().contains("biome_selection") && !state.selectedBiomes().isEmpty();
+                    && !state.selectedBiomes().isEmpty();
             addRenderableWidget(stage);
             Button cancel = Button.builder(Component.literal("Cancel stage"), button ->
                     PrestigeNetwork.sendAction(PrestigeNetwork.Action.CANCEL, actionPos(), ""))

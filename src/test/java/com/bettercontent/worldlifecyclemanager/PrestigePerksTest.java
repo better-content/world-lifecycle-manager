@@ -82,12 +82,12 @@ final class PrestigePerksTest {
         assertEquals(8, build(11, EnumSet.allOf(PrestigePerks.Perk.class)).successorAttempts());
     }
 
-    @Test void biomePreferencesAreUniqueBoundedAndOptionalUntilStage() {
+    @Test void biomePreferencesNeedNoPerkAllocationAndRemainUniqueAndBounded() {
         assertDoesNotThrow(() -> PrestigePerks.validateShape(build(0, EnumSet.noneOf(PrestigePerks.Perk.class))));
         assertDoesNotThrow(() -> PrestigePerks.validateShape(new PrestigePerks.Build("lineage-test", 0,
-                EnumSet.of(PrestigePerks.Perk.BIOME_SELECTION), List.of("minecraft:plains", "minecraft:forest"))));
+                EnumSet.noneOf(PrestigePerks.Perk.class), List.of("minecraft:plains", "minecraft:forest"))));
         assertThrows(IllegalArgumentException.class, () -> PrestigePerks.validateShape(new PrestigePerks.Build("lineage-test", 0,
-                EnumSet.of(PrestigePerks.Perk.BIOME_SELECTION), List.of("minecraft:plains", "minecraft:plains"))));
+                EnumSet.noneOf(PrestigePerks.Perk.class), List.of("minecraft:plains", "minecraft:plains"))));
     }
 
     @Test void biomeAllowlistStripsCommentsAndRejectsDuplicateRows() {
