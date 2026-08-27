@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class LineagePlayerDataStoreTest {
     @TempDir Path root;
-    private final ResourceLocation threads = new ResourceLocation("better_content_fixes", "threads");
+    private final ResourceLocation threads = new ResourceLocation("better_content_threads", "threads");
     private final UUID player = UUID.fromString("12345678-1234-5678-9abc-def012345678");
 
     @Test void missingStateHasEmptyDefaultAndRoundTrips() throws Exception {
