@@ -206,8 +206,9 @@ public final class PrestigeService {
     public static void publish(ServerPlayer player, String author, String fileName) throws IOException {
         long generation = lineage(player.server).generation();
         SchematicLibrary.publish(player.server, player.getGameProfile().getName(), player.hasPermissions(4), author, fileName, generation);
-        ThreadsBridge.emit(player, "schematic_capture", "substantial");
-        ThreadsBridge.emit(player, "schematic_publish", "correlated");
+        String threadEpisode=java.util.UUID.nameUUIDFromBytes((author+"\u0000"+fileName).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+        ThreadsBridge.emit(player, "schematic_capture", "substantial",threadEpisode);
+        ThreadsBridge.emit(player, "schematic_publish", "correlated",threadEpisode);
     }
 
     public static void remove(ServerPlayer player, String id) throws IOException {
