@@ -36,7 +36,6 @@ public final class PrestigeMod {
 
     private void onCreativeTab(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey().equals(CreativeModeTabs.FUNCTIONAL_BLOCKS)) {
-            event.accept(PrestigeRegistry.WORLD_CONDENSER_HULL_ITEM);
             event.accept(PrestigeRegistry.WORLD_CONDENSER_INTERFACE_ITEM);
         }
     }

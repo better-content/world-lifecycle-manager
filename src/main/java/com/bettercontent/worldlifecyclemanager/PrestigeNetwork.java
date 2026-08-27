@@ -170,7 +170,14 @@ public final class PrestigeNetwork {
                     }
                     case REMOVE -> PrestigeService.remove(player, packet.value);
                 }
+                if (packet.action != Action.REFRESH_RESET && packet.action != Action.REFRESH_SCHEMATICS
+                        && packet.action != Action.REFRESH_PERKS) {
+                    PrestigeMod.LOGGER.info("World Condenser action succeeded actor={} action={} pos={}",
+                            player.getScoreboardName(), packet.action, packet.pos);
+                }
             } catch (Exception error) {
+                PrestigeMod.LOGGER.warn("World Condenser action failed actor={} action={} pos={}: {}",
+                        player.getScoreboardName(), packet.action, packet.pos, error.getMessage());
                 player.displayClientMessage(Component.literal("World Condenser refused: " + error.getMessage()), false);
             }
             switch (packet.action) {

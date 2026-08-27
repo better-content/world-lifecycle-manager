@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -33,12 +34,15 @@ public final class PrestigeArchiveVerifier {
 
     public static void main(String[] args) {
         try {
-            if (args.length == 4 && args[0].equals("verify")) {
+            if (args.length == 5 && args[0].equals("manifest")) {
+                generateManifest(Path.of(args[1]), Path.of(args[2]), args[3], args[4]);
+            } else if (args.length == 4 && args[0].equals("verify")) {
                 verify(Path.of(args[1]), null, args[2], args[3]);
             } else if (args.length == 5 && args[0].equals("verify-against")) {
                 verify(Path.of(args[1]), Path.of(args[2]), args[3], args[4]);
             } else {
-                throw new IllegalArgumentException("usage: PrestigeArchiveVerifier verify ARCHIVE LINEAGE TRANSACTION | "
+                throw new IllegalArgumentException("usage: PrestigeArchiveVerifier manifest WORLD OUTPUT LINEAGE TRANSACTION | "
+                        + "verify ARCHIVE LINEAGE TRANSACTION | "
                         + "verify-against ARCHIVE EXTERNAL_MANIFEST LINEAGE TRANSACTION");
             }
         } catch (Exception error) {
@@ -46,6 +50,73 @@ public final class PrestigeArchiveVerifier {
                     + (error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage()));
             System.exit(1);
         }
+    }
+
+    static void generateManifest(Path worldRaw, Path outputRaw, String lineage, String transaction) throws Exception {
+        validateId("lineage", lineage);
+        validateId("transaction", transaction);
+        Path world = worldRaw.toAbsolutePath().normalize();
+        Path output = outputRaw.toAbsolutePath().normalize();
+        if (!Files.isDirectory(world, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(world)) {
+            throw new IllegalArgumentException("world is not a directory: " + world);
+        }
+        requireRegular(world.resolve("level.dat"), "world level.dat");
+        Path parent = output.getParent();
+        if (parent == null || !Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(parent)) {
+            throw new IllegalArgumentException("manifest output parent is not a directory: " + parent);
+        }
+        if (Files.isSymbolicLink(output)) {
+            throw new IllegalArgumentException("manifest output must not be a symbolic link: " + output);
+        }
+
+        List<Path> files = new ArrayList<>();
+        try (var paths = Files.walk(world)) {
+            for (Path path : paths.toList()) {
+                if (Files.isSymbolicLink(path)) {
+                    throw new IllegalArgumentException("symbolic links are forbidden in a world archive: " + world.relativize(path));
+                }
+                if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+                    files.add(path);
+                } else if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+                    throw new IllegalArgumentException("special files are forbidden in a world archive: " + world.relativize(path));
+                }
+            }
+        }
+        files.sort((left, right) -> relativePath(world, left).compareTo(relativePath(world, right)));
+
+        StringBuilder manifest = new StringBuilder();
+        manifest.append(MANIFEST_MAGIC).append('\n')
+                .append("lineage\t").append(lineage).append('\n')
+                .append("transaction\t").append(transaction).append('\n')
+                .append("file_count\t").append(files.size()).append('\n');
+        for (Path file : files) {
+            String relative = relativePath(world, file);
+            String encoded = Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(relative.getBytes(StandardCharsets.UTF_8));
+            manifest.append("file\t").append(encoded).append('\t').append(Files.size(file)).append('\t')
+                    .append(sha256(file)).append('\n');
+        }
+        byte[] raw = manifest.toString().getBytes(StandardCharsets.UTF_8);
+        parseManifest(raw);
+        Path temporary = Files.createTempFile(parent, output.getFileName() + ".", ".tmp");
+        try {
+            Files.write(temporary, raw);
+            try {
+                Files.move(temporary, output, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                Files.move(temporary, output, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+        System.out.println("ok - prestige archive manifest generated files=" + files.size()
+                + " lineage=" + lineage + " transaction=" + transaction + " output=" + output);
+    }
+
+    private static String relativePath(Path world, Path file) {
+        String relative = world.relativize(file).toString().replace(file.getFileSystem().getSeparator(), "/");
+        validateRelativePath(relative);
+        return relative;
     }
 
     private static void verify(Path archiveRaw, Path externalRaw, String expectedLineage,
@@ -104,6 +175,10 @@ public final class PrestigeArchiveVerifier {
         }
         System.out.println("ok - prestige archive v1 verified files=" + manifest.files().size()
                 + " sha256=" + sha256(archive) + " lineage=" + expectedLineage + " transaction=" + expectedTransaction);
+    }
+
+    static void validateManifest(byte[] raw) {
+        parseManifest(raw);
     }
 
     private static Manifest parseManifest(byte[] raw) {

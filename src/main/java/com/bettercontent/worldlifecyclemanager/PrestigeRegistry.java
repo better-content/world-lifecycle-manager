@@ -22,12 +22,8 @@ public final class PrestigeRegistry {
         return BlockBehaviour.Properties.of().strength(5.0F, 18.0F).sound(SoundType.METAL).requiresCorrectToolForDrops();
     }
 
-    public static final RegistryObject<Block> WORLD_CONDENSER_HULL = BLOCKS.register("world_condenser_hull",
-            () -> new Block(condenserProperties()));
     public static final RegistryObject<Block> WORLD_CONDENSER_INTERFACE = BLOCKS.register("world_condenser_interface",
             () -> new WorldCondenserInterfaceBlock(condenserProperties().noOcclusion()));
-    public static final RegistryObject<Item> WORLD_CONDENSER_HULL_ITEM = ITEMS.register("world_condenser_hull",
-            () -> new BlockItem(WORLD_CONDENSER_HULL.get(), new Item.Properties()));
     public static final RegistryObject<Item> WORLD_CONDENSER_INTERFACE_ITEM = ITEMS.register("world_condenser_interface",
             () -> new BlockItem(WORLD_CONDENSER_INTERFACE.get(), new Item.Properties().stacksTo(1)));
     public static final RegistryObject<BlockEntityType<WorldCondenserBlockEntity>> WORLD_CONDENSER_BLOCK_ENTITY =

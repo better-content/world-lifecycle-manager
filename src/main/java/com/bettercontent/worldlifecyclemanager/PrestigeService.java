@@ -149,7 +149,11 @@ public final class PrestigeService {
 
     public static void stage(MinecraftServer server) throws IOException {
         if (Files.exists(control(server).resolve("reset-request-v5.tsv"))) throw new IllegalStateException("reset already committed");
-        PrestigeContracts.Draft draft = PrestigeContracts.readDraft(control(server).resolve("draft-v5.tsv"));
+        Path draftPath = control(server).resolve("draft-v5.tsv");
+        if (!Files.isRegularFile(draftPath)) {
+            throw new IllegalStateException("no prestige draft exists; select biomes first with /world_lifecycle_manager select <biomes>");
+        }
+        PrestigeContracts.Draft draft = PrestigeContracts.readDraft(draftPath);
         PrestigeContracts.Lineage lineage = lineage(server);
         if (!draft.lineageId().equals(lineage.lineageId()) || draft.generation() != lineage.generation()
                 || !draft.worldName().equals(worldName(server))) {
@@ -182,7 +186,11 @@ public final class PrestigeService {
         if (!worldName(server).equals(confirmation)) throw new IllegalArgumentException("confirmation must exactly match the world name");
         Path resetPath = control(server).resolve("reset-request-v5.tsv");
         if (Files.exists(resetPath)) throw new IllegalStateException("reset already committed");
-        PrestigeContracts.Staged staged = PrestigeContracts.readStaged(control(server).resolve("staged-request-v5.tsv"));
+        Path stagedPath = control(server).resolve("staged-request-v5.tsv");
+        if (!Files.isRegularFile(stagedPath)) {
+            throw new IllegalStateException("no staged prestige request exists; run /world_lifecycle_manager stage first");
+        }
+        PrestigeContracts.Staged staged = PrestigeContracts.readStaged(stagedPath);
         PrestigeContracts.Lineage lineage = lineage(server);
         if (!staged.lineageId().equals(lineage.lineageId()) || staged.generation() != lineage.generation()
                 || !staged.worldName().equals(worldName(server))) {
@@ -217,9 +225,8 @@ public final class PrestigeService {
     }
 
     private static void requireCondenser(ServerPlayer player, BlockPos pos) {
-        if (!(player.level().getBlockEntity(pos) instanceof WorldCondenserBlockEntity entity) || !entity.isAttuned()
-                || !WorldCondenserFormation.isFormed(player.level(), pos, player.level().getBlockState(pos))) {
-            throw new IllegalStateException("formed and attuned World Condenser required");
+        if (!(player.level().getBlockEntity(pos) instanceof WorldCondenserBlockEntity)) {
+            throw new IllegalStateException("nearby World Condenser Interface required");
         }
     }
 

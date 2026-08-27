@@ -175,7 +175,9 @@ public final class PrestigePerks {
     public static void setBiomes(MinecraftServer server, List<String> biomes) throws IOException {
         requireEditable(server);
         Build current = draft(server);
-        if (!biomes.isEmpty() && !current.has(Perk.BIOME_SELECTION)) throw new IllegalStateException("Biome Selection is not unlocked");
+        if (!biomes.isEmpty() && !current.has(Perk.BIOME_SELECTION)) {
+            throw new IllegalStateException("Biome Selection is not allocated; run /world_lifecycle_manager perks allocate biome_selection first");
+        }
         if (!biomes.isEmpty()) PrestigeContracts.validateBiomes(biomes);
         writeBuild(draftPath(server), DRAFT_MAGIC, new Build(current.lineageId(), current.baseGeneration(),
                 current.perks(), biomes), null);

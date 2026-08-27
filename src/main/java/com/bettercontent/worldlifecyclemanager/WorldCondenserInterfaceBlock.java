@@ -6,9 +6,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
@@ -21,9 +19,7 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraftforge.network.NetworkHooks;
-import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.Nullable;
-import wayoftime.bloodmagic.core.data.Binding;
 
 public final class WorldCondenserInterfaceBlock extends BaseEntityBlock {
     public static final DirectionProperty FACING = BlockStateProperties.FACING;
@@ -47,32 +43,17 @@ public final class WorldCondenserInterfaceBlock extends BaseEntityBlock {
         return new WorldCondenserBlockEntity(pos, state);
     }
 
-    static boolean isBoundApprenticeOrb(ItemStack stack) {
-        var itemId = ForgeRegistries.ITEMS.getKey(stack.getItem());
-        return itemId != null && itemId.toString().equals("bloodmagic:apprenticebloodorb")
-                && Binding.fromStack(stack) != null;
-    }
+    static boolean hasOperatorPermission(int permissionLevel) { return permissionLevel >= 4; }
 
     @Override public InteractionResult use(BlockState state, Level level, BlockPos pos, Player player,
                                            InteractionHand hand, BlockHitResult hit) {
         if (!(level.getBlockEntity(pos) instanceof WorldCondenserBlockEntity condenser)) return InteractionResult.PASS;
-        ItemStack held = player.getItemInHand(hand);
-        if (!condenser.isAttuned() && isBoundApprenticeOrb(held)) {
-            if (!level.isClientSide) {
-                condenser.attune();
-                player.displayClientMessage(Component.translatable("message.world_lifecycle_manager.condenser_attuned"), false);
-            }
-            return InteractionResult.sidedSuccess(level.isClientSide);
-        }
-        if (!condenser.isAttuned()) {
-            if (!level.isClientSide) player.displayClientMessage(Component.translatable("message.world_lifecycle_manager.condenser_needs_orb"), true);
-            return InteractionResult.sidedSuccess(level.isClientSide);
-        }
-        if (!WorldCondenserFormation.isFormed(level, pos, state)) {
-            if (!level.isClientSide) player.displayClientMessage(Component.translatable("message.world_lifecycle_manager.condenser_unformed"), true);
-            return InteractionResult.sidedSuccess(level.isClientSide);
-        }
         if (!level.isClientSide && player instanceof ServerPlayer serverPlayer) {
+            if (!serverPlayer.hasPermissions(4)) {
+                PrestigeMod.LOGGER.warn("World Condenser access denied for non-operator {} at {}", serverPlayer.getScoreboardName(), pos);
+                serverPlayer.displayClientMessage(Component.translatable("message.world_lifecycle_manager.condenser_operator_required"), true);
+                return InteractionResult.CONSUME;
+            }
             String threadEpisode=java.util.UUID.nameUUIDFromBytes((serverPlayer.getUUID()+":"+level.dimension().location()+":"+pos.asLong()).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
             ThreadsBridge.emit(serverPlayer,"condenser","formed",threadEpisode);
             if (!PrestigeNetwork.allowPhysicalOpen(serverPlayer)) return InteractionResult.CONSUME;
@@ -82,6 +63,7 @@ public final class WorldCondenserInterfaceBlock extends BaseEntityBlock {
                     buffer.writeBoolean(false);
                     buffer.writeVarInt(0);
                 });
+                PrestigeMod.LOGGER.info("World Condenser opened for {} at {}", serverPlayer.getScoreboardName(), pos);
             } catch (RuntimeException error) {
                 PrestigeMod.LOGGER.error("World Condenser menu failed to open for {} at {}", serverPlayer.getScoreboardName(), pos, error);
                 serverPlayer.displayClientMessage(Component.literal("World Condenser failed to open; check the server log."), false);

@@ -83,7 +83,6 @@ dependencies {
     runtimeOnly(deobf("dev.engine-room.flywheel:flywheel-forge-${property("minecraft_version")}:${property("flywheel_version")}"))
     implementation(deobf("com.tterrag.registrate:Registrate:${property("registrate_version")}"))
     implementation(deobf("io.github.llamalad7:mixinextras-forge:0.3.6"))
-    compileOnly(deobf("curse.maven:blood-magic-224791:${property("bloodmagic_file_id")}"))
     runtimeOnly(deobf("curse.maven:blood-magic-224791:${property("bloodmagic_file_id")}"))
     runtimeOnly(deobf("curse.maven:patchouli-306770:${property("patchouli_file_id")}"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")

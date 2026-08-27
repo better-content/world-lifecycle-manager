@@ -13,18 +13,14 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.util.Unit;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import com.simibubi.create.content.schematics.cannon.SchematicannonBlockEntity;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
-import net.minecraftforge.registries.ForgeRegistries;
-import wayoftime.bloodmagic.core.data.Binding;
 
 import java.util.List;
-import java.util.UUID;
 import java.util.stream.IntStream;
 
 @PrefixGameTestTemplate(false)
@@ -52,72 +48,23 @@ public final class WorldCondenserGameTests {
     }
 
     @GameTest(templateNamespace = PrestigeMod.MOD_ID, template = "empty", timeoutTicks = 200)
-    public static void formationAndAttunementAreValidated(final GameTestHelper helper) {
-        BlockPos center = helper.absolutePos(new BlockPos(2, 2, 2));
-        BlockPos interfacePos = center.relative(Direction.NORTH);
+    public static void standaloneInterfaceRequiresNoStructureOrAttunement(final GameTestHelper helper) {
+        BlockPos interfacePos = helper.absolutePos(new BlockPos(2, 2, 2));
         BlockState interfaceState = PrestigeRegistry.WORLD_CONDENSER_INTERFACE.get().defaultBlockState()
                 .setValue(WorldCondenserInterfaceBlock.FACING, Direction.NORTH);
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dy = -1; dy <= 1; dy++) {
-                for (int dz = -1; dz <= 1; dz++) {
-                    BlockPos cursor = center.offset(dx, dy, dz);
-                    if (cursor.equals(center)) helper.getLevel().setBlockAndUpdate(cursor, Blocks.AIR.defaultBlockState());
-                    else if (cursor.equals(interfacePos)) helper.getLevel().setBlockAndUpdate(cursor, interfaceState);
-                    else helper.getLevel().setBlockAndUpdate(cursor, PrestigeRegistry.WORLD_CONDENSER_HULL.get().defaultBlockState());
-                }
-            }
-        }
-        if (!WorldCondenserFormation.isFormed(helper.getLevel(), interfacePos, interfaceState)) {
-            helper.fail("Expected a hollow 3x3x3 shell with one face interface to form");
-            return;
-        }
-        interfaceState = interfaceState.setValue(WorldCondenserInterfaceBlock.FACING, Direction.EAST);
         helper.getLevel().setBlockAndUpdate(interfacePos, interfaceState);
-        if (!WorldCondenserFormation.isFormed(helper.getLevel(), interfacePos, interfaceState)) {
-            helper.fail("A valid shell depended on the interface block's placement orientation");
-            return;
-        }
         if (!(helper.getLevel().getBlockEntity(interfacePos) instanceof WorldCondenserBlockEntity entity)) {
             helper.fail("World Condenser interface did not create its block entity");
             return;
         }
-        entity.attune();
         CompoundTag saved = entity.saveWithFullMetadata();
-        WorldCondenserBlockEntity restored = new WorldCondenserBlockEntity(interfacePos, interfaceState);
-        restored.load(saved);
-        if (!restored.isAttuned()) {
-            helper.fail("World Condenser attunement did not survive NBT persistence");
+        if (saved.contains("Attuned")) {
+            helper.fail("Standalone World Condenser retained obsolete attunement state");
             return;
         }
-        helper.getLevel().setBlockAndUpdate(center.above().east(), Blocks.AIR.defaultBlockState());
-        if (WorldCondenserFormation.isFormed(helper.getLevel(), interfacePos, interfaceState)) {
-            helper.fail("World Condenser stayed formed after a hull block was removed");
-            return;
-        }
-        helper.succeed();
-    }
-
-    @GameTest(templateNamespace = PrestigeMod.MOD_ID, template = "empty", timeoutTicks = 100)
-    public static void attunementRequiresAnyBoundApprenticeOrb(final GameTestHelper helper) {
-        var apprentice = ForgeRegistries.ITEMS.getValue(new ResourceLocation("bloodmagic:apprenticebloodorb"));
-        if (apprentice == null) {
-            helper.fail("Blood Magic Apprentice Blood Orb is not registered");
-            return;
-        }
-        ItemStack unbound = new ItemStack(apprentice);
-        if (WorldCondenserInterfaceBlock.isBoundApprenticeOrb(unbound)) {
-            helper.fail("An unbound Apprentice Blood Orb satisfied condenser attunement");
-            return;
-        }
-        ItemStack bound = unbound.copy();
-        UUID otherOwner = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
-        bound.getOrCreateTag().put("binding", new Binding(otherOwner, "OtherBuilder").serializeNBT());
-        if (!WorldCondenserInterfaceBlock.isBoundApprenticeOrb(bound)) {
-            helper.fail("A valid bound Apprentice Blood Orb did not satisfy condenser attunement");
-            return;
-        }
-        if (WorldCondenserInterfaceBlock.isBoundApprenticeOrb(new ItemStack(Blocks.STONE))) {
-            helper.fail("A non-orb item satisfied condenser attunement");
+        if (!WorldCondenserInterfaceBlock.hasOperatorPermission(4)
+                || WorldCondenserInterfaceBlock.hasOperatorPermission(3)) {
+            helper.fail("World Condenser operator permission threshold is not level 4");
             return;
         }
         helper.succeed();

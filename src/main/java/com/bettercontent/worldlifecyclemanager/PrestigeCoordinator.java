@@ -95,10 +95,14 @@ public final class PrestigeCoordinator {
                             try {
                                 java.util.List<String> biomes = parseBiomeArguments(StringArgumentType.getString(context, "biomes"));
                                 PrestigeService.saveDraft(context.getSource().getServer(), biomes, "Operator");
+                                PrestigeMod.LOGGER.info("Prestige CLI selection succeeded actor={} biomes={}",
+                                        context.getSource().getTextName(), String.join(",", biomes));
                                 context.getSource().sendSuccess(() -> Component.literal(
                                         "Selected Prestige biomes " + String.join(" > ", biomes) + "; stage with /world_lifecycle_manager stage"), true);
                                 return 1;
                             } catch (Exception error) {
+                                PrestigeMod.LOGGER.warn("Prestige CLI selection failed actor={}: {}",
+                                        context.getSource().getTextName(), error.getMessage());
                                 context.getSource().sendFailure(Component.literal("Prestige selection failed: " + error.getMessage()));
                                 return 0;
                             }
@@ -107,10 +111,13 @@ public final class PrestigeCoordinator {
                         .executes(context -> {
                             try {
                                 PrestigeService.stage(context.getSource().getServer());
+                                PrestigeMod.LOGGER.info("Prestige CLI stage succeeded actor={}", context.getSource().getTextName());
                                 context.getSource().sendSuccess(() -> Component.literal("Staged prestige reset; commit with /world_lifecycle_manager commit "
                                         + PrestigeService.worldName(context.getSource().getServer())), true);
                                 return 1;
                             } catch (Exception error) {
+                                PrestigeMod.LOGGER.warn("Prestige CLI stage failed actor={}: {}",
+                                        context.getSource().getTextName(), error.getMessage());
                                 context.getSource().sendFailure(Component.literal("Prestige stage failed: " + error.getMessage()));
                                 return 0;
                             }
@@ -130,11 +137,17 @@ public final class PrestigeCoordinator {
                             try {
                                 String transaction = PrestigeService.commit(context.getSource().getServer(),
                                         StringArgumentType.getString(context, "world-name"));
+                                PrestigeMod.LOGGER.info("Prestige CLI commit succeeded actor={} transaction={}",
+                                        context.getSource().getTextName(), transaction);
+                                context.getSource().sendSuccess(() -> Component.literal(
+                                        "Prestige commit accepted: " + transaction + "; clean shutdown is scheduled"), true);
                                 context.getSource().getServer().getPlayerList().broadcastSystemMessage(Component.literal(
                                         "Prestige committed " + transaction + " by operator command; all world and player state "
                                                 + "will be archived and reset."), false);
                                 return 1;
                             } catch (Exception error) {
+                                PrestigeMod.LOGGER.warn("Prestige CLI commit failed actor={}: {}",
+                                        context.getSource().getTextName(), error.getMessage());
                                 context.getSource().sendFailure(Component.literal("Prestige commit failed: " + error.getMessage()));
                                 return 0;
                             }

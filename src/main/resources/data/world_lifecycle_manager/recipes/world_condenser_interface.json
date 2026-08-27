@@ -1,9 +1,12 @@
 {
-  "type": "bloodmagic:altar",
-  "altarSyphon": 20000,
-  "consumptionRate": 40,
-  "drainRate": 40,
-  "input": { "item": "world_lifecycle_manager:world_condenser_hull" },
-  "output": { "item": "world_lifecycle_manager:world_condenser_interface" },
-  "upgradeLevel": 1
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": ["RBR", "BOB", "RBR"],
+  "key": {
+    "R": { "item": "bloodmagic:reinforcedslate" },
+    "B": { "item": "create:brass_sheet" },
+    "O": { "item": "minecraft:obsidian" }
+  },
+  "result": { "item": "world_lifecycle_manager:world_condenser_interface" },
+  "show_notification": true
 }
