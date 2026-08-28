@@ -13,6 +13,11 @@ import java.nio.file.Path;
 import java.util.List;
 
 public final class PrestigeService {
+    public enum Recovery { NONE, DISCARD_DRAFT, DISCARD_STAGED }
+    public record RecoveryDiagnostic(Recovery action, String message) {}
+    record Selection(PrestigePerks.Build build, List<String> biomes, String author) {
+        Selection { biomes = List.copyOf(biomes); }
+    }
     public record View(String status, String worldName, PrestigeContracts.Lineage lineage, List<String> selectedBiomes,
                        String author, List<String> allowedBiomes,
                        List<SchematicLibrary.Entry> published, boolean operator, PrestigePerks.Build perkBuild) {}
@@ -74,28 +79,155 @@ public final class PrestigeService {
     public static View view(ServerPlayer player, boolean includeSchematics) throws IOException {
         MinecraftServer server = player.server;
         PrestigeContracts.Lineage lineage = lineage(server);
-        PrestigePerks.Build perkBuild = PrestigePerks.draft(server);
-        String status = Files.exists(control(server).resolve("successor-request-v5.tsv")) ? "successor-starting"
-                : Files.exists(control(server).resolve("reset-request-v5.tsv")) ? "committed"
-                : Files.exists(control(server).resolve("staged-request-v5.tsv")) ? "staged" : "draft";
-        List<String> allowedBiomes = allowedBiomes(server, perkBuild);
-        List<String> biomes = perkBuild.biomes();
-        String author = player.getGameProfile().getName();
-        Path draftPath = control(server).resolve("draft-v5.tsv");
-        if (Files.isRegularFile(draftPath)) {
-            PrestigeContracts.Draft draft = PrestigeContracts.readDraft(draftPath);
-            biomes = draft.biomes(); author = draft.author();
-        } else {
-            Path stagedPath = control(server).resolve("staged-request-v5.tsv");
-            if (Files.isRegularFile(stagedPath)) {
-                PrestigeContracts.Staged staged = PrestigeContracts.readStaged(stagedPath);
-                biomes = staged.biomes(); author = staged.author();
-            }
-        }
+        String currentWorld = worldName(server);
+        RecoveryDiagnostic recovery = diagnoseRecovery(server, lineage, currentWorld);
+        if (recovery.action() != Recovery.NONE) throw new IllegalStateException(recovery.message());
+        String status = lifecycleStatus(server);
+        Selection selection = switch (status) {
+            case "staged" -> stagedSelection(server, lineage, currentWorld);
+            case "committed", "successor-starting" -> resetSelection(server, lineage, currentWorld,
+                    player.getGameProfile().getName());
+            default -> draftSelection(server, lineage, currentWorld, player.getGameProfile().getName());
+        };
+        List<String> allowedBiomes = allowedBiomes(server, selection.build());
         boolean operator = player.hasPermissions(4);
         List<SchematicLibrary.Entry> published = List.of();
         if (includeSchematics) published = SchematicLibrary.list(server);
-        return new View(status, worldName(server), lineage, biomes, author, allowedBiomes, published, operator, perkBuild);
+        return new View(status, currentWorld, lineage, selection.biomes(), selection.author(), allowedBiomes,
+                published, operator, selection.build());
+    }
+
+    private static String lifecycleStatus(MinecraftServer server) {
+        return Files.exists(control(server).resolve("successor-request-v5.tsv")) ? "successor-starting"
+                : Files.exists(control(server).resolve("reset-request-v5.tsv")) ? "committed"
+                : Files.exists(control(server).resolve("staged-request-v5.tsv")) ? "staged" : "draft";
+    }
+
+    private static Selection draftSelection(MinecraftServer server, PrestigeContracts.Lineage lineage,
+                                            String currentWorld, String defaultAuthor) throws IOException {
+        PrestigePerks.Build build = PrestigePerks.draft(server);
+        Path path = control(server).resolve("draft-v5.tsv");
+        if (!Files.isRegularFile(path)) {
+            if (!build.biomes().isEmpty()) throw new IllegalStateException("prestige draft contracts are incomplete");
+            return new Selection(build, build.biomes(), defaultAuthor);
+        }
+        PrestigeContracts.Draft draft = PrestigeContracts.readDraft(path);
+        validateDraftSelection(lineage, currentWorld, draft, build);
+        return new Selection(build, draft.biomes(), draft.author());
+    }
+
+    private static Selection stagedSelection(MinecraftServer server, PrestigeContracts.Lineage lineage,
+                                             String currentWorld) throws IOException {
+        Path path = control(server).resolve("staged-request-v5.tsv");
+        if (!Files.isRegularFile(path) || !Files.isRegularFile(PrestigePerks.stagedPath(server))) {
+            throw new IllegalStateException("staged prestige contracts are incomplete");
+        }
+        PrestigeContracts.Staged staged = PrestigeContracts.readStaged(path);
+        PrestigePerks.Build build = PrestigePerks.staged(server);
+        validateStagedSelection(lineage, currentWorld, staged, build);
+        return new Selection(build, staged.biomes(), staged.author());
+    }
+
+    private static Selection resetSelection(MinecraftServer server, PrestigeContracts.Lineage lineage,
+                                            String currentWorld, String defaultAuthor) throws IOException {
+        Path path = control(server).resolve("reset-request-v5.tsv");
+        if (!Files.isRegularFile(path) || !Files.isRegularFile(PrestigePerks.resetPath(server))) {
+            throw new IllegalStateException("committed prestige contracts are incomplete");
+        }
+        PrestigeContracts.Reset reset = PrestigeContracts.readReset(path);
+        PrestigePerks.Build build = PrestigePerks.reset(server, reset);
+        if (!reset.lineageId().equals(lineage.lineageId())
+                || (reset.baseGeneration() != lineage.generation()
+                    && (reset.baseGeneration() == Long.MAX_VALUE || reset.baseGeneration() + 1 != lineage.generation()))
+                || !reset.worldName().equals(currentWorld)) {
+            throw new IllegalStateException("committed prestige identity is stale");
+        }
+        return new Selection(build, reset.biomes(), defaultAuthor);
+    }
+
+    static void validateDraftSelection(PrestigeContracts.Lineage lineage, String currentWorld,
+                                       PrestigeContracts.Draft draft, PrestigePerks.Build build) {
+        if (!draft.lineageId().equals(lineage.lineageId()) || draft.generation() != lineage.generation()
+                || !draft.worldName().equals(currentWorld) || !build.lineageId().equals(lineage.lineageId())
+                || build.baseGeneration() != lineage.generation()) {
+            throw new IllegalStateException("draft identity is stale");
+        }
+        if (!draft.biomes().equals(build.biomes())) throw new IllegalStateException("draft biome snapshots do not match");
+    }
+
+    static void validateStagedSelection(PrestigeContracts.Lineage lineage, String currentWorld,
+                                        PrestigeContracts.Staged staged, PrestigePerks.Build build) {
+        if (!staged.lineageId().equals(lineage.lineageId()) || staged.generation() != lineage.generation()
+                || !staged.worldName().equals(currentWorld) || !build.lineageId().equals(lineage.lineageId())
+                || build.baseGeneration() != lineage.generation()) {
+            throw new IllegalStateException("staged identity is stale");
+        }
+        if (!staged.biomes().equals(build.biomes())) throw new IllegalStateException("staged biome snapshots do not match");
+    }
+
+    public static RecoveryDiagnostic diagnoseRecovery(MinecraftServer server) {
+        try {
+            return diagnoseRecovery(server, lineage(server), worldName(server));
+        } catch (Exception error) {
+            return new RecoveryDiagnostic(Recovery.NONE, "");
+        }
+    }
+
+    private static RecoveryDiagnostic diagnoseRecovery(MinecraftServer server, PrestigeContracts.Lineage lineage,
+                                                       String currentWorld) {
+        Path control = control(server);
+        if (Files.exists(control.resolve("reset-request-v5.tsv"))
+                || Files.exists(control.resolve("successor-request-v5.tsv"))) {
+            return new RecoveryDiagnostic(Recovery.NONE, "");
+        }
+        boolean stagedArtifacts = Files.exists(control.resolve("staged-request-v5.tsv"))
+                || Files.exists(PrestigePerks.stagedPath(server));
+        if (stagedArtifacts) {
+            try {
+                stagedSelection(server, lineage, currentWorld);
+                return new RecoveryDiagnostic(Recovery.NONE, "");
+            } catch (Exception error) {
+                return recoverable(Recovery.DISCARD_STAGED, "staged prestige state", error);
+            }
+        }
+        boolean draftArtifacts = Files.exists(control.resolve("draft-v5.tsv"))
+                || Files.exists(PrestigePerks.draftPath(server));
+        if (draftArtifacts) {
+            try {
+                draftSelection(server, lineage, currentWorld, "Operator");
+            } catch (Exception error) {
+                return recoverable(Recovery.DISCARD_DRAFT, "prestige draft state", error);
+            }
+        }
+        return new RecoveryDiagnostic(Recovery.NONE, "");
+    }
+
+    private static RecoveryDiagnostic recoverable(Recovery action, String label, Exception error) {
+        String detail = error.getMessage();
+        if (detail == null || detail.isBlank()) detail = error.getClass().getSimpleName();
+        return new RecoveryDiagnostic(action, label + " is invalid: " + detail
+                + "; a nearby operator may discard this uncommitted state");
+    }
+
+    public static void recoverInvalid(ServerPlayer player, BlockPos interfacePos) throws IOException {
+        requireOperator(player);
+        requireCondenser(player, interfacePos);
+        MinecraftServer server = player.server;
+        RecoveryDiagnostic recovery = diagnoseRecovery(server);
+        if (recovery.action() == Recovery.NONE) throw new IllegalStateException("no invalid uncommitted prestige state exists");
+        if (Files.exists(control(server).resolve("reset-request-v5.tsv"))
+                || Files.exists(control(server).resolve("successor-request-v5.tsv"))) {
+            throw new IllegalStateException("committed prestige state cannot be discarded in-game");
+        }
+        if (recovery.action() == Recovery.DISCARD_STAGED) {
+            Files.deleteIfExists(control(server).resolve("staged-request-v5.tsv"));
+            Files.deleteIfExists(PrestigePerks.stagedPath(server));
+            recovery = diagnoseRecovery(server);
+        }
+        if (recovery.action() == Recovery.DISCARD_DRAFT) {
+            Files.deleteIfExists(control(server).resolve("draft-v5.tsv"));
+            Files.deleteIfExists(PrestigePerks.draftPath(server));
+        }
     }
 
     public static void saveDraft(ServerPlayer player, List<String> biomes) throws IOException {

@@ -127,14 +127,23 @@ public final class PrestigePerks {
     }
 
     public static Build reset(MinecraftServer server, PrestigeContracts.Successor successor) throws IOException {
+        return reset(server, successor.lineageId(), successor.baseGeneration(), successor.transactionId(), successor.biomes());
+    }
+
+    public static Build reset(MinecraftServer server, PrestigeContracts.Reset reset) throws IOException {
+        return reset(server, reset.lineageId(), reset.baseGeneration(), reset.transactionId(), reset.biomes());
+    }
+
+    private static Build reset(MinecraftServer server, String lineageId, long baseGeneration,
+                               String transactionId, List<String> biomes) throws IOException {
         Build build = readBuild(resetPath(server), RESET_MAGIC, new PrestigeContracts.Lineage(
-                successor.lineageId(), successor.baseGeneration(), successor.baseGeneration()), successor.baseGeneration(), true);
+                lineageId, baseGeneration, baseGeneration), baseGeneration, true);
         Map<String, String> fields = readFields(resetPath(server), RESET_MAGIC,
                 List.of("lineage", "base_generation", "target_generation", "transaction", "perks", "biome_1", "biome_2", "biome_3"));
-        if (!fields.get("transaction").equals(successor.transactionId())) {
+        if (!fields.get("transaction").equals(transactionId)) {
             throw new IllegalStateException("perk snapshot transaction does not match successor");
         }
-        if (!build.biomes().equals(successor.biomes())) throw new IllegalStateException("perk snapshot biome preferences do not match successor");
+        if (!build.biomes().equals(biomes)) throw new IllegalStateException("perk snapshot biome preferences do not match successor");
         validateBuild(server, build);
         return build;
     }

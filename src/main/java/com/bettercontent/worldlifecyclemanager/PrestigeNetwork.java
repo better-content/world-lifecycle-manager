@@ -22,7 +22,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 public final class PrestigeNetwork {
-    private static final String VERSION = "6";
+    private static final String VERSION = "7";
     private static final int REFRESH_CACHE_TICKS = 10;
     private static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(new ResourceLocation(PrestigeMod.MOD_ID, "world_lifecycle_manager"))
@@ -104,7 +104,8 @@ public final class PrestigeNetwork {
         } catch (Exception error) {
             String message = safeError(error);
             PrestigeMod.LOGGER.warn("World Condenser state failed for {}: {}", player.getScoreboardName(), message);
-            StatePacket packet = StatePacket.failure(pos, view, message);
+            StatePacket packet = StatePacket.failure(pos, view, message, player.hasPermissions(4),
+                    PrestigeService.diagnoseRecovery(player.server).action());
             STATE_CACHE.put(player, new CachedState(now, pos, view, packet));
             send(player, packet);
         }
@@ -123,7 +124,7 @@ public final class PrestigeNetwork {
     private record CachedState(long tick, BlockPos pos, ViewKind view, StatePacket packet) {}
     public enum ViewKind { RESET, SCHEMATICS, PERKS }
     public enum Action { REFRESH_RESET, REFRESH_SCHEMATICS, REFRESH_PERKS, SET_BIOME_1, SET_BIOME_2, SET_BIOME_3,
-        TOGGLE_PERK, STAGE, CANCEL, COMMIT, DOWNLOAD, REMOVE }
+        TOGGLE_PERK, STAGE, CANCEL, COMMIT, RECOVER_INVALID, DOWNLOAD, REMOVE }
 
     public record ActionPacket(Action action, BlockPos pos, String value) {
         static void encode(ActionPacket packet, FriendlyByteBuf buffer) {
@@ -159,6 +160,12 @@ public final class PrestigeNetwork {
                                 "World Condenser committed " + tx + " by " + player.getGameProfile().getName()
                                         + "; all world and player state will be archived and reset."), false);
                     }
+                    case RECOVER_INVALID -> {
+                        requirePhysicalMenu(player, menu);
+                        if (!packet.value.isEmpty()) throw new IllegalArgumentException("recovery does not accept a value");
+                        PrestigeService.recoverInvalid(player, packet.pos);
+                        player.displayClientMessage(Component.literal("Discarded invalid uncommitted Prestige state."), false);
+                    }
                     case DOWNLOAD -> {
                         SchematicLibrary.Entry entry = SchematicLibrary.list(player.server).stream()
                                 .filter(candidate -> candidate.id().equals(packet.value)).findFirst()
@@ -180,7 +187,7 @@ public final class PrestigeNetwork {
                 player.displayClientMessage(Component.literal("World Condenser refused: " + error.getMessage()), false);
             }
             switch (packet.action) {
-                case SET_BIOME_1, SET_BIOME_2, SET_BIOME_3, STAGE, CANCEL -> sendState(player, ViewKind.RESET, false);
+                case SET_BIOME_1, SET_BIOME_2, SET_BIOME_3, STAGE, CANCEL, RECOVER_INVALID -> sendState(player, ViewKind.RESET, false);
                 case TOGGLE_PERK -> sendState(player, ViewKind.PERKS, false);
                 case REMOVE -> sendState(player, ViewKind.SCHEMATICS, false);
                 default -> { }
@@ -240,7 +247,7 @@ public final class PrestigeNetwork {
 
     public record ClientEntry(String id, String author, String name, long size, String sha256) {}
     public record StatePacket(ViewKind view, String error, String status, String worldName, BlockPos pos, long total, long generation, List<String> selectedBiomes,
-                              String author, boolean operator, List<String> biomes,
+                              String author, boolean operator, PrestigeService.Recovery recovery, List<String> biomes,
                               List<ClientEntry> published, List<String> perks, int perkBudget) {
         public StatePacket {
             selectedBiomes = List.copyOf(selectedBiomes);
@@ -248,12 +255,12 @@ public final class PrestigeNetwork {
         }
         StatePacket(PrestigeService.View state, BlockPos pos, ViewKind view) {
             this(view, "", state.status(), state.worldName(), pos, state.lineage().totalPrestiges(), state.lineage().generation(),
-                    state.selectedBiomes(), state.author(), state.operator(), state.allowedBiomes(),
+                    state.selectedBiomes(), state.author(), state.operator(), PrestigeService.Recovery.NONE, state.allowedBiomes(),
                     state.published().stream().map(entry -> new ClientEntry(entry.id(), entry.author(), entry.originalName(),
                             entry.size(), entry.sha256())).toList(), state.perkBuild().ids(), state.perkBuild().budget());
         }
-        static StatePacket failure(BlockPos pos, ViewKind view, String error) {
-            return new StatePacket(view, error, "unavailable", "", pos, 0, 0, List.of(), "", false,
+        static StatePacket failure(BlockPos pos, ViewKind view, String error, boolean operator, PrestigeService.Recovery recovery) {
+            return new StatePacket(view, error, "unavailable", "", pos, 0, 0, List.of(), "", operator, recovery,
                     List.of(), List.of(), List.of(), 0);
         }
         static void encode(StatePacket packet, FriendlyByteBuf buffer) {
@@ -268,6 +275,7 @@ public final class PrestigeNetwork {
             buffer.writeCollection(packet.selectedBiomes, (out, value) -> out.writeUtf(value, 256));
             buffer.writeUtf(packet.author, 32);
             buffer.writeBoolean(packet.operator);
+            buffer.writeEnum(packet.recovery);
             buffer.writeCollection(packet.biomes, (out, value) -> out.writeUtf(value, 256));
             buffer.writeCollection(packet.published, (out, entry) -> {
                 out.writeUtf(entry.id, 64); out.writeUtf(entry.author, 32); out.writeUtf(entry.name, 256);
@@ -284,12 +292,13 @@ public final class PrestigeNetwork {
             List<String> selected = readBounded(buffer, 3, in -> in.readUtf(256));
             String author = buffer.readUtf(32);
             boolean operator = buffer.readBoolean();
+            PrestigeService.Recovery recovery = buffer.readEnum(PrestigeService.Recovery.class);
             List<String> biomes = readBounded(buffer, PrestigeLimits.MAX_BIOMES, in -> in.readUtf(256));
             List<ClientEntry> entries = readBounded(buffer, SchematicLibrary.MAX_PUBLISHED, in -> new ClientEntry(
                     in.readUtf(64), in.readUtf(32), in.readUtf(256), in.readLong(), in.readUtf(64)));
             List<String> perks = readBounded(buffer, PrestigePerks.Perk.values().length, in -> in.readUtf(32));
             int budget = buffer.readVarInt();
-            return new StatePacket(view, error, status, worldName, pos, total, generation, selected, author, operator,
+            return new StatePacket(view, error, status, worldName, pos, total, generation, selected, author, operator, recovery,
                     biomes, entries, perks, budget);
         }
         static void handle(StatePacket packet, Supplier<NetworkEvent.Context> supplier) {

@@ -37,6 +37,7 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
     private int perkScroll = GRAPH_SCROLL_MAX;
     private List<SchematicLocalStore.Entry> localSchematics = List.of();
     private String localSchematicError = "";
+    private boolean recoveryArmed;
 
     public WorldCondenserScreen(WorldCondenserMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title);
@@ -57,7 +58,10 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
 
     @Override protected void containerTick() {
         super.containerTick();
-        if (seenRevision != PrestigeClientState.revision()) rebuild();
+        if (seenRevision != PrestigeClientState.revision()) {
+            recoveryArmed = false;
+            rebuild();
+        }
     }
 
     private void rebuild() {
@@ -66,8 +70,30 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
         var state = PrestigeClientState.state();
         if (state == null) return;
         if (!state.error().isEmpty()) {
-            addRenderableWidget(Button.builder(Component.literal("Retry"), button -> requestCurrentTab())
-                    .bounds(leftPos + (imageWidth - 100) / 2, topPos + imageHeight - 28, 100, 20).build());
+            int width = WorldCondenserLayout.contentWidth(imageWidth);
+            int x = leftPos + 10;
+            boolean recoverable = WorldCondenserAccess.canRecover(state.operator(), menu.remote(), state.recovery());
+            Button retry = Button.builder(Component.literal("Retry"), button -> requestCurrentTab())
+                    .bounds(x, topPos + imageHeight - 28, recoverable ? Math.max(64, width / 3) : width, 20).build();
+            addRenderableWidget(retry);
+            if (recoverable) {
+                String subject = state.recovery() == PrestigeService.Recovery.DISCARD_STAGED ? "staged state" : "draft state";
+                Button recover = Button.builder(Component.literal(recoveryArmed
+                                ? "CONFIRM DISCARD " + subject.toUpperCase(java.util.Locale.ROOT)
+                                : "Discard invalid " + subject), button -> {
+                            if (!recoveryArmed) {
+                                recoveryArmed = true;
+                                rebuild();
+                            } else {
+                                recoveryArmed = false;
+                                PrestigeNetwork.sendAction(PrestigeNetwork.Action.RECOVER_INVALID, actionPos(), "");
+                            }
+                        }).bounds(x + retry.getWidth() + 6, topPos + imageHeight - 28,
+                                Math.max(1, width - retry.getWidth() - 6), 20).build();
+                recover.setTooltip(Tooltip.create(Component.literal(
+                        "Deletes only invalid uncommitted Prestige draft/stage files after the server revalidates them.")));
+                addRenderableWidget(recover);
+            }
             return;
         }
         int x = leftPos + 10;
@@ -133,7 +159,7 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
             Button commit = Button.builder(Component.literal("COMMIT PERMANENT RESET"), button ->
                     PrestigeNetwork.sendAction(PrestigeNetwork.Action.COMMIT, actionPos(), ""))
                 .bounds(x, y, width, 20).build();
-            commit.active = !menu.remote() && state.status().equals("staged");
+            commit.active = WorldCondenserAccess.canCommit(state.operator(), menu.remote(), state.status());
             addRenderableWidget(commit);
         }
         if (!state.operator()) {

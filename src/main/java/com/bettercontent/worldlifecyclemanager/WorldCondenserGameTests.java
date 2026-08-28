@@ -76,7 +76,7 @@ public final class WorldCondenserGameTests {
                 .mapToObj(index -> "fixture:biome_" + index).toList();
         var packet = new PrestigeNetwork.StatePacket(PrestigeNetwork.ViewKind.RESET, "", "draft", "world",
                 BlockPos.ZERO, 2, 1, List.of(biomes.get(0), biomes.get(1)), "Builder", true,
-                biomes, List.of(), List.of("biome_selection"), 2);
+                PrestigeService.Recovery.NONE, biomes, List.of(), List.of("biome_selection"), 2);
         FriendlyByteBuf roundTrip = new FriendlyByteBuf(Unpooled.buffer());
         try {
             PrestigeNetwork.StatePacket.encode(packet, roundTrip);
