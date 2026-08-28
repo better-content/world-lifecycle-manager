@@ -241,9 +241,24 @@ public final class PrestigeCoordinator {
         for (String target : successor.biomes()) {
             Pair<BlockPos, Holder<Biome>> found = findBiome(level, target);
             if (found == null) continue;
-            BlockPos candidate = found.getFirst();
-            int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, candidate.getX(), candidate.getZ());
-            return new LandingResult(new BlockPos(candidate.getX(), y, candidate.getZ()), target);
+            BlockPos surface = findMatchingSurface(level, found.getFirst(), new ResourceLocation(target));
+            if (surface != null) return new LandingResult(surface, target);
+        }
+        return null;
+    }
+
+    private static BlockPos findMatchingSurface(ServerLevel level, BlockPos candidate, ResourceLocation requested) {
+        int[] offsets = {0, 4, -4, 8, -8, 16, -16, 32, -32};
+        for (int xOffset : offsets) {
+            for (int zOffset : offsets) {
+                int x = candidate.getX() + xOffset;
+                int z = candidate.getZ() + zOffset;
+                int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                BlockPos surface = new BlockPos(x, y, z);
+                boolean matches = level.getBiome(surface).unwrapKey()
+                        .map(key -> key.location().equals(requested)).orElse(false);
+                if (matches) return surface;
+            }
         }
         return null;
     }
