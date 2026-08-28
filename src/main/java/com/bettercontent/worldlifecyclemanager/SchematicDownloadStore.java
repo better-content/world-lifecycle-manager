@@ -18,7 +18,7 @@ public final class SchematicDownloadStore {
         String safeAuthor = author.replaceAll("[^A-Za-z0-9_]", "_");
         String safeName = name.replaceAll("[^A-Za-z0-9._ -]", "_");
         if (!safeName.endsWith(".nbt")) safeName += ".nbt";
-        Path directory = gameDirectory.resolve("schematics/lineage").resolve(safeAuthor).normalize();
+        Path directory = gameDirectory.resolve("schematics").normalize();
         Files.createDirectories(directory);
         Path primary = directory.resolve(safeName).normalize();
         if (!primary.startsWith(directory)) throw new IOException("download path escaped schematic directory");
@@ -26,7 +26,7 @@ public final class SchematicDownloadStore {
         if (hash(Files.readAllBytes(primary)).equals(digest)) return new Result(Status.PRESENT, primary);
         String stem = safeName.substring(0, safeName.length() - 4);
         for (int length : new int[]{8, 12, 16, 64}) {
-            Path alternate = directory.resolve(stem + "-" + digest.substring(0, length) + ".nbt");
+            Path alternate = directory.resolve(stem + "-" + safeAuthor + "-" + digest.substring(0, length) + ".nbt");
             if (!Files.exists(alternate)) return write(alternate, data);
             if (hash(Files.readAllBytes(alternate)).equals(digest)) return new Result(Status.PRESENT, alternate);
         }
@@ -38,12 +38,12 @@ public final class SchematicDownloadStore {
             String safeAuthor = author.replaceAll("[^A-Za-z0-9_]", "_");
             String safeName = name.replaceAll("[^A-Za-z0-9._ -]", "_");
             if (!safeName.endsWith(".nbt")) safeName += ".nbt";
-            Path directory = gameDirectory.resolve("schematics/lineage").resolve(safeAuthor).normalize();
+            Path directory = gameDirectory.resolve("schematics").normalize();
             String stem = safeName.substring(0, safeName.length() - 4);
             Path primary = directory.resolve(safeName);
             if (Files.isRegularFile(primary) && hash(Files.readAllBytes(primary)).equals(expectedHash)) return true;
             for (int length : new int[]{8, 12, 16, 64}) {
-                Path alternate = directory.resolve(stem + "-" + expectedHash.substring(0, length) + ".nbt");
+                Path alternate = directory.resolve(stem + "-" + safeAuthor + "-" + expectedHash.substring(0, length) + ".nbt");
                 if (Files.isRegularFile(alternate) && hash(Files.readAllBytes(alternate)).equals(expectedHash)) return true;
             }
             return false;

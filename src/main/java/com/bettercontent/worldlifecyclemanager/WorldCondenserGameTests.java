@@ -76,7 +76,7 @@ public final class WorldCondenserGameTests {
                 .mapToObj(index -> "fixture:biome_" + index).toList();
         var packet = new PrestigeNetwork.StatePacket(PrestigeNetwork.ViewKind.RESET, "", "draft", "world",
                 BlockPos.ZERO, 2, 1, List.of(biomes.get(0), biomes.get(1)), "Builder", true,
-                biomes, List.of(), List.of(), List.of("biome_selection"), 2);
+                biomes, List.of(), List.of("biome_selection"), 2);
         FriendlyByteBuf roundTrip = new FriendlyByteBuf(Unpooled.buffer());
         try {
             PrestigeNetwork.StatePacket.encode(packet, roundTrip);
@@ -121,6 +121,17 @@ public final class WorldCondenserGameTests {
                 helper.fail("Schematic sync manifest failed a round trip"); return;
             }
         } finally { manifestRoundTrip.release(); }
+        byte[] publicationBytes = new byte[]{0x1f, (byte) 0x8b, 1, 2, 3};
+        var publication = new PrestigeNetwork.PublishPacket(BlockPos.ZERO, "plan.nbt", publicationBytes);
+        FriendlyByteBuf publicationRoundTrip = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            PrestigeNetwork.PublishPacket.encode(publication, publicationRoundTrip);
+            PrestigeNetwork.PublishPacket decoded = PrestigeNetwork.PublishPacket.decode(publicationRoundTrip);
+            if (!publication.pos().equals(decoded.pos()) || !publication.name().equals(decoded.name())
+                    || !java.util.Arrays.equals(publicationBytes, decoded.compressedNbt())) {
+                helper.fail("Schematic publication packet failed a boundary round trip"); return;
+            }
+        } finally { publicationRoundTrip.release(); }
         helper.succeed();
     }
 

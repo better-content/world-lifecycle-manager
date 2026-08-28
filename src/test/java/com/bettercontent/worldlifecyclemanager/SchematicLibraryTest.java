@@ -9,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.io.ByteArrayOutputStream;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 
@@ -22,17 +23,12 @@ class SchematicLibraryTest {
 
     @Test
     void publicationIsOptInAttributedDeduplicatedAndRemovable() throws Exception {
-        Path upload = serverRoot.resolve("schematics/uploaded/Builder/house.nbt");
-        Files.createDirectories(upload.getParent());
-        NbtIo.writeCompressed(structure(0), upload.toFile());
+        byte[] upload = compressedStructure(0);
 
-        assertEquals(java.util.List.of("house.nbt"), SchematicLibrary.ownUploads(serverRoot, "Builder"));
         assertEquals(java.util.List.of(), SchematicLibrary.list(serverRoot));
-        assertThrows(IllegalArgumentException.class,
-                () -> SchematicLibrary.publish(serverRoot, "Intruder", false, "Builder", "house.nbt", 0));
 
-        var first = SchematicLibrary.publish(serverRoot, "Builder", false, "Builder", "house.nbt", 0);
-        var second = SchematicLibrary.publish(serverRoot, "Builder", false, "Builder", "house.nbt", 1);
+        var first = SchematicLibrary.publish(serverRoot, "Builder", "house.nbt", upload, 0);
+        var second = SchematicLibrary.publish(serverRoot, "Builder", "house.nbt", upload, 1);
         assertEquals(first.id(), second.id());
         try (var objects = Files.list(serverRoot.resolve(".world_lifecycle_manager/schematics/objects"))) {
             assertEquals(1, objects.count());
@@ -52,24 +48,16 @@ class SchematicLibraryTest {
 
     @Test
     void publicationRejectsTraversalAndMalformedPayloads() throws Exception {
-        Path uploadRoot = serverRoot.resolve("schematics/uploaded/Builder");
-        Files.createDirectories(uploadRoot);
-        Files.writeString(uploadRoot.resolve("broken.nbt"), "not gzip");
         assertThrows(IllegalArgumentException.class,
-                () -> SchematicLibrary.publish(serverRoot, "Builder", false, "Builder", "../broken.nbt", 0));
+                () -> SchematicLibrary.publish(serverRoot, "Builder", "../broken.nbt", compressedStructure(0), 0));
         assertThrows(IllegalArgumentException.class,
-                () -> SchematicLibrary.publish(serverRoot, "Builder", false, "Builder", "broken.nbt", 0));
+                () -> SchematicLibrary.publish(serverRoot, "Builder", "broken.nbt", "not gzip".getBytes(), 0));
+        assertThrows(IllegalArgumentException.class,
+                () -> SchematicLibrary.publish(serverRoot, "Builder", "broken.nbt", new byte[(int) SchematicLibrary.MAX_BYTES + 1], 0));
     }
 
     @Test
     void catalogsRejectExcessEntriesBeforeUnboundedProcessing() throws Exception {
-        Path uploads = serverRoot.resolve("schematics/uploaded/Builder");
-        Files.createDirectories(uploads);
-        for (int i = 0; i <= SchematicLibrary.MAX_UPLOADS; i++) {
-            Files.writeString(uploads.resolve("upload-" + i + ".nbt"), "fixture");
-        }
-        assertThrows(IllegalStateException.class, () -> SchematicLibrary.ownUploads(serverRoot, "Builder"));
-
         Path entries = serverRoot.resolve(".world_lifecycle_manager/schematics/entries");
         Files.createDirectories(entries);
         for (int i = 0; i <= SchematicLibrary.MAX_PUBLISHED; i++) {
@@ -80,13 +68,6 @@ class SchematicLibraryTest {
 
     @Test
     void catalogsBoundScansEvenWhenEntriesAreIgnored() throws Exception {
-        Path uploads = serverRoot.resolve("schematics/uploaded/Builder");
-        Files.createDirectories(uploads);
-        for (int i = 0; i <= SchematicLibrary.MAX_DIRECTORY_SCAN; i++) {
-            Files.writeString(uploads.resolve("ignored-" + i + ".txt"), "fixture");
-        }
-        assertThrows(IllegalStateException.class, () -> SchematicLibrary.ownUploads(serverRoot, "Builder"));
-
         Path entries = serverRoot.resolve(".world_lifecycle_manager/schematics/entries");
         Files.createDirectories(entries);
         for (int i = 0; i <= SchematicLibrary.MAX_DIRECTORY_SCAN; i++) {
@@ -97,51 +78,45 @@ class SchematicLibraryTest {
 
     @Test
     void publicationLimitAllowsReplacementButRejectsNewEntry() throws Exception {
-        Path uploads = serverRoot.resolve("schematics/uploaded/Builder");
-        Files.createDirectories(uploads);
-        Path first = uploads.resolve("first.nbt");
-        writeStructure(first, 1);
-        var published = SchematicLibrary.publish(serverRoot, "Builder", false, "Builder", "first.nbt", 0);
+        byte[] first = compressedStructure(1);
+        var published = SchematicLibrary.publish(serverRoot, "Builder", "first.nbt", first, 0);
         Path entries = serverRoot.resolve(".world_lifecycle_manager/schematics/entries");
         for (int i = 1; i < SchematicLibrary.MAX_PUBLISHED; i++) {
             Files.writeString(entries.resolve("placeholder-" + i + ".tsv"), "reserved\n");
         }
-        assertEquals(published.id(), SchematicLibrary.publish(
-                serverRoot, "Builder", false, "Builder", "first.nbt", 1).id());
+        assertEquals(published.id(), SchematicLibrary.publish(serverRoot, "Builder", "first.nbt", first, 1).id());
 
-        writeStructure(uploads.resolve("second.nbt"), 2);
         assertThrows(IllegalStateException.class, () -> SchematicLibrary.publish(
-                serverRoot, "Builder", false, "Builder", "second.nbt", 1));
+                serverRoot, "Builder", "second.nbt", compressedStructure(2), 1));
     }
 
     @Test
     void validInterruptedObjectPublicationIsRecovered() throws Exception {
-        Path upload = serverRoot.resolve("schematics/uploaded/Builder/recovery.nbt");
-        Files.createDirectories(upload.getParent());
-        writeStructure(upload, 3);
+        byte[] upload = compressedStructure(3);
         byte[] sanitized = SchematicLibrary.sanitize(upload, null);
         String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(sanitized));
         Path objects = serverRoot.resolve(".world_lifecycle_manager/schematics/objects");
         Files.createDirectories(objects);
         Files.write(objects.resolve(digest + ".nbt.partial"), sanitized);
-        var entry = SchematicLibrary.publish(serverRoot, "Builder", false, "Builder", "recovery.nbt", 0);
+        var entry = SchematicLibrary.publish(serverRoot, "Builder", "recovery.nbt", upload, 0);
         assertEquals(digest, entry.sha256());
         assertArrayEquals(sanitized, Files.readAllBytes(objects.resolve(digest + ".nbt")));
     }
 
     @Test
     void decompressedNbtBudgetIsEnforced() throws Exception {
-        Path upload = serverRoot.resolve("schematics/uploaded/Builder/bomb.nbt");
-        Files.createDirectories(upload.getParent());
         CompoundTag structure = structure(4);
         structure.putByteArray("oversized", new byte[(int) SchematicLibrary.MAX_DECOMPRESSED_BYTES + 1]);
-        NbtIo.writeCompressed(structure, upload.toFile());
+        ByteArrayOutputStream upload = new ByteArrayOutputStream();
+        NbtIo.writeCompressed(structure, upload);
         assertThrows(IllegalArgumentException.class, () -> SchematicLibrary.publish(
-                serverRoot, "Builder", false, "Builder", "bomb.nbt", 0));
+                serverRoot, "Builder", "bomb.nbt", upload.toByteArray(), 0));
     }
 
-    private static void writeStructure(Path path, int marker) throws Exception {
-        NbtIo.writeCompressed(structure(marker), path.toFile());
+    private static byte[] compressedStructure(int marker) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        NbtIo.writeCompressed(structure(marker), output);
+        return output.toByteArray();
     }
 
     private static CompoundTag structure(int marker) {

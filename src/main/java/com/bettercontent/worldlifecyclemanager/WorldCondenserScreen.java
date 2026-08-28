@@ -4,9 +4,13 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraftforge.fml.loading.FMLPaths;
+
+import java.util.List;
 
 public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCondenserMenu> {
     private record GraphNode(String id, String label, int column, int virtualY, int width, boolean free) {}
@@ -28,9 +32,11 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
     };
     private int seenRevision = -1;
     private int tab;
-    private int uploadIndex;
+    private int localIndex;
     private int publishedIndex;
     private int perkScroll = GRAPH_SCROLL_MAX;
+    private List<SchematicLocalStore.Entry> localSchematics = List.of();
+    private String localSchematicError = "";
 
     public WorldCondenserScreen(WorldCondenserMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title);
@@ -44,6 +50,7 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
         imageHeight = WorldCondenserLayout.panelHeight(height);
         super.init();
         PrestigeClientState.clear();
+        if (tab == 1) refreshLocalSchematics(false);
         rebuild();
         requestCurrentTab();
     }
@@ -233,32 +240,73 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
     private void rebuildSchematics(PrestigeNetwork.StatePacket state, int x) {
         int contentWidth = WorldCondenserLayout.contentWidth(imageWidth);
         int y = topPos + WorldCondenserLayout.contentTop(imageWidth, imageHeight);
-        int actionWidth = Math.min(80, Math.max(56, contentWidth / 4));
-        int selectWidth = Math.max(1, contentWidth - actionWidth - 10);
-        uploadIndex = state.uploads().isEmpty() ? 0 : Math.min(uploadIndex, state.uploads().size() - 1);
-        String upload = state.uploads().isEmpty() ? "No server uploads" : state.uploads().get(uploadIndex);
-        addRenderableWidget(Button.builder(Component.literal("Server upload: " + shortText(upload, 42)), button -> {
-            if (!state.uploads().isEmpty()) { uploadIndex = (uploadIndex + 1) % state.uploads().size(); rebuild(); }
-        }).bounds(x, y, selectWidth, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Publish"), button -> {
-            if (!state.uploads().isEmpty()) PrestigeNetwork.sendAction(PrestigeNetwork.Action.PUBLISH, actionPos(), state.uploads().get(uploadIndex));
-        }).bounds(x + selectWidth + 10, y, actionWidth, 20).build());
+        int actionWidth = Math.min(76, Math.max(58, contentWidth / 5));
+        int arrowWidth = 24;
+        int gap = 4;
+        int selectWidth = Math.max(1, contentWidth - actionWidth - arrowWidth * 2 - gap * 3);
+        localIndex = SchematicSelector.clamp(localIndex, localSchematics.size());
+        String localLabel;
+        if (!localSchematicError.isEmpty()) localLabel = "Local scan failed";
+        else if (localSchematics.isEmpty()) localLabel = "No local .nbt schematics";
+        else localLabel = (localIndex + 1) + "/" + localSchematics.size() + "  " + localSchematics.get(localIndex).name();
+        Button local = Button.builder(Component.literal(shortText(localLabel, 34)), button -> {})
+                .bounds(x, y, selectWidth, 20).build();
+        local.active = false;
+        local.setTooltip(Tooltip.create(Component.literal(localSchematicError.isEmpty()
+                ? localSchematics.isEmpty()
+                    ? "Save a structure with Create's Schematic and Quill into .minecraft/schematics, then click Refresh local."
+                    : localSchematics.get(localIndex).name() + " · " + localSchematics.get(localIndex).size() + " bytes"
+                : localSchematicError)));
+        addRenderableWidget(local);
+        Button localPrevious = Button.builder(Component.literal("<"), button -> {
+            localIndex = SchematicSelector.previous(localIndex, localSchematics.size()); rebuild();
+        }).bounds(x + selectWidth + gap, y, arrowWidth, 20).build();
+        localPrevious.active = SchematicSelector.canCycle(localSchematics.size());
+        addRenderableWidget(localPrevious);
+        Button localNext = Button.builder(Component.literal(">"), button -> {
+            localIndex = SchematicSelector.next(localIndex, localSchematics.size()); rebuild();
+        }).bounds(x + selectWidth + gap * 2 + arrowWidth, y, arrowWidth, 20).build();
+        localNext.active = SchematicSelector.canCycle(localSchematics.size());
+        addRenderableWidget(localNext);
+        Button publish = Button.builder(Component.literal("Publish"), button -> publishSelectedLocal())
+                .bounds(x + contentWidth - actionWidth, y, actionWidth, 20).build();
+        publish.active = state.operator() && !localSchematics.isEmpty();
+        publish.setTooltip(Tooltip.create(Component.literal(state.operator()
+                ? "Publish the selected local schematic under your player name."
+                : "Permission level 4 required.")));
+        addRenderableWidget(publish);
         y += 30;
-        publishedIndex = state.published().isEmpty() ? 0 : Math.min(publishedIndex, state.published().size() - 1);
-        String published = state.published().isEmpty() ? "Library empty" : state.published().get(publishedIndex).author()
-                + "/" + state.published().get(publishedIndex).name();
-        addRenderableWidget(Button.builder(Component.literal("Library: " + shortText(published, 42)), button -> {
-            if (!state.published().isEmpty()) { publishedIndex = (publishedIndex + 1) % state.published().size(); rebuild(); }
-        }).bounds(x, y, selectWidth, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Download"), button -> {
-            if (!state.published().isEmpty()) PrestigeNetwork.sendAction(PrestigeNetwork.Action.DOWNLOAD, actionPos(),
-                    state.published().get(publishedIndex).id());
-        }).bounds(x + selectWidth + 10, y, actionWidth, 20).build());
+        publishedIndex = SchematicSelector.clamp(publishedIndex, state.published().size());
+        String published = state.published().isEmpty() ? "Library empty" : (publishedIndex + 1) + "/" + state.published().size()
+                + "  " + state.published().get(publishedIndex).author() + "/" + state.published().get(publishedIndex).name();
+        Button library = Button.builder(Component.literal(shortText(published, 34)), button -> {})
+                .bounds(x, y, selectWidth, 20).build();
+        library.active = false;
+        if (state.published().isEmpty()) library.setTooltip(Tooltip.create(Component.literal(
+                "No lineage schematics have been published yet.")));
+        addRenderableWidget(library);
+        Button libraryPrevious = Button.builder(Component.literal("<"), button -> {
+            publishedIndex = SchematicSelector.previous(publishedIndex, state.published().size()); rebuild();
+        }).bounds(x + selectWidth + gap, y, arrowWidth, 20).build();
+        libraryPrevious.active = SchematicSelector.canCycle(state.published().size());
+        addRenderableWidget(libraryPrevious);
+        Button libraryNext = Button.builder(Component.literal(">"), button -> {
+            publishedIndex = SchematicSelector.next(publishedIndex, state.published().size()); rebuild();
+        }).bounds(x + selectWidth + gap * 2 + arrowWidth, y, arrowWidth, 20).build();
+        libraryNext.active = SchematicSelector.canCycle(state.published().size());
+        addRenderableWidget(libraryNext);
+        Button download = Button.builder(Component.literal("Download"), button -> PrestigeNetwork.sendAction(
+                        PrestigeNetwork.Action.DOWNLOAD, actionPos(), state.published().get(publishedIndex).id()))
+                .bounds(x + contentWidth - actionWidth, y, actionWidth, 20).build();
+        download.active = !state.published().isEmpty();
+        addRenderableWidget(download);
+        y += 30;
+        addRenderableWidget(Button.builder(Component.literal("Refresh local"), button -> refreshLocalSchematics(true))
+                .bounds(x, y, Math.min(110, contentWidth), 20).build());
         if (state.operator() && !state.published().isEmpty()) {
-            y += 30;
             addRenderableWidget(Button.builder(Component.literal("Remove selected entry"), button ->
                     PrestigeNetwork.sendAction(PrestigeNetwork.Action.REMOVE, actionPos(), state.published().get(publishedIndex).id()))
-                    .bounds(x, y, Math.min(300, contentWidth), 20).build());
+                    .bounds(x + 120, y, Math.min(180, Math.max(1, contentWidth - 120)), 20).build());
         }
         addRenderableWidget(Button.builder(Component.literal("Back to configure"), button -> switchTab(0))
                 .bounds(x, topPos + imageHeight - 28, Math.min(170, contentWidth), 20).build());
@@ -272,6 +320,34 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
         return menu.pos();
     }
 
+    private void refreshLocalSchematics(boolean redraw) {
+        try {
+            localSchematics = SchematicLocalStore.list(FMLPaths.GAMEDIR.get());
+            localSchematicError = "";
+            localIndex = SchematicSelector.clamp(localIndex, localSchematics.size());
+        } catch (Exception error) {
+            localSchematics = List.of();
+            localIndex = 0;
+            localSchematicError = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+        }
+        if (redraw) rebuild();
+    }
+
+    private void publishSelectedLocal() {
+        if (localSchematics.isEmpty()) return;
+        SchematicLocalStore.Entry selected = localSchematics.get(localIndex);
+        try {
+            byte[] data = SchematicLocalStore.read(FMLPaths.GAMEDIR.get(), selected.name());
+            PrestigeNetwork.sendPublish(actionPos(), selected.name(), data);
+            if (Minecraft.getInstance().player != null) Minecraft.getInstance().player.displayClientMessage(
+                    Component.literal("Publishing lineage schematic " + selected.name() + "…"), false);
+        } catch (Exception error) {
+            if (Minecraft.getInstance().player != null) Minecraft.getInstance().player.displayClientMessage(
+                    Component.literal("Schematic publication failed: " + error.getMessage()), false);
+            refreshLocalSchematics(true);
+        }
+    }
+
     private void requestCurrentTab() {
         PrestigeNetwork.sendAction(tab == 0 ? PrestigeNetwork.Action.REFRESH_RESET
                 : tab == 1 ? PrestigeNetwork.Action.REFRESH_SCHEMATICS : PrestigeNetwork.Action.REFRESH_PERKS, actionPos(), "");
@@ -280,6 +356,7 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
     private void switchTab(int next) {
         if (tab == next) return;
         tab = next;
+        if (tab == 1) refreshLocalSchematics(false);
         PrestigeClientState.clear();
         rebuild();
         requestCurrentTab();

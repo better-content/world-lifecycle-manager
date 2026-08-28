@@ -16,11 +16,13 @@ final class SchematicDownloadStoreTest {
         String hash = SchematicDownloadStore.hash(first);
         var saved = SchematicDownloadStore.save(game, "Builder", "workshop.nbt", hash, first);
         assertEquals(SchematicDownloadStore.Status.SAVED, saved.status());
+        assertEquals(game.resolve("schematics/workshop.nbt"), saved.path());
         assertEquals(SchematicDownloadStore.Status.PRESENT,
                 SchematicDownloadStore.save(game, "Builder", "workshop.nbt", hash, first).status());
         Files.writeString(saved.path(), "local-edit");
         var alternate = SchematicDownloadStore.save(game, "Builder", "workshop.nbt", hash, first);
         assertEquals(SchematicDownloadStore.Status.SAVED, alternate.status());
+        assertTrue(alternate.path().getFileName().toString().contains("Builder"));
         assertTrue(alternate.path().getFileName().toString().contains(hash.substring(0, 8)));
         assertEquals("local-edit", Files.readString(saved.path()));
         assertTrue(SchematicDownloadStore.contains(game, "Builder", "workshop.nbt", hash));

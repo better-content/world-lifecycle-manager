@@ -14,7 +14,7 @@ import java.util.List;
 
 public final class PrestigeService {
     public record View(String status, String worldName, PrestigeContracts.Lineage lineage, List<String> selectedBiomes,
-                       String author, List<String> allowedBiomes, List<String> ownUploads,
+                       String author, List<String> allowedBiomes,
                        List<SchematicLibrary.Entry> published, boolean operator, PrestigePerks.Build perkBuild) {}
 
     private PrestigeService() {}
@@ -93,15 +93,9 @@ public final class PrestigeService {
             }
         }
         boolean operator = player.hasPermissions(4);
-        List<String> uploads = List.of();
         List<SchematicLibrary.Entry> published = List.of();
-        if (includeSchematics) {
-            uploads = operator ? SchematicLibrary.allUploads(server)
-                    : SchematicLibrary.ownUploads(server, player.getGameProfile().getName()).stream()
-                    .map(name -> player.getGameProfile().getName() + "/" + name).toList();
-            published = SchematicLibrary.list(server);
-        }
-        return new View(status, worldName(server), lineage, biomes, author, allowedBiomes, uploads, published, operator, perkBuild);
+        if (includeSchematics) published = SchematicLibrary.list(server);
+        return new View(status, worldName(server), lineage, biomes, author, allowedBiomes, published, operator, perkBuild);
     }
 
     public static void saveDraft(ServerPlayer player, List<String> biomes) throws IOException {
@@ -211,12 +205,15 @@ public final class PrestigeService {
         return transaction;
     }
 
-    public static void publish(ServerPlayer player, String author, String fileName) throws IOException {
+    public static SchematicLibrary.Entry publish(ServerPlayer player, String fileName, byte[] compressedNbt) throws IOException {
+        requireOperator(player);
+        String author = player.getGameProfile().getName();
         long generation = lineage(player.server).generation();
-        SchematicLibrary.publish(player.server, player.getGameProfile().getName(), player.hasPermissions(4), author, fileName, generation);
+        SchematicLibrary.Entry entry = SchematicLibrary.publish(player.server, author, fileName, compressedNbt, generation);
         String threadEpisode=java.util.UUID.nameUUIDFromBytes((author+"\u0000"+fileName).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
         ThreadsBridge.emit(player, "schematic_capture", "substantial",threadEpisode);
         ThreadsBridge.emit(player, "schematic_publish", "correlated",threadEpisode);
+        return entry;
     }
 
     public static void remove(ServerPlayer player, String id) throws IOException {

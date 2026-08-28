@@ -19,6 +19,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.nio.charset.StandardCharsets;
@@ -43,9 +44,7 @@ import java.util.zip.GZIPInputStream;
 public final class SchematicLibrary {
     public static final long MAX_BYTES = 256_000L;
     public static final long MAX_DECOMPRESSED_BYTES = 64L * 1024L * 1024L;
-    public static final int MAX_UPLOADS = 256;
     public static final int MAX_PUBLISHED = 256;
-    public static final int MAX_AUTHORS = 256;
     public static final int MAX_DIRECTORY_SCAN = 512;
     private static final String ENTRY_MAGIC = "BC_PRESTIGE_SCHEMATIC_V2";
 
@@ -53,73 +52,29 @@ public final class SchematicLibrary {
 
     private SchematicLibrary() {}
 
-    public static List<String> ownUploads(MinecraftServer server, String author) throws IOException {
-        return ownUploads(serverRoot(server), author);
+    public static Entry publish(MinecraftServer server, String author, String fileName,
+                                byte[] compressedNbt, long generation) throws IOException {
+        return publish(serverRoot(server), author, fileName, compressedNbt, generation, server);
     }
 
-    static List<String> ownUploads(Path serverRoot, String author) throws IOException {
-        PrestigeContracts.validateAuthor(author);
-        Path root = uploadedRoot(serverRoot);
-        Path authorRoot = root.resolve(author).normalize();
-        if (!authorRoot.startsWith(root) || !Files.isDirectory(authorRoot, LinkOption.NOFOLLOW_LINKS)) return List.of();
-        return uploadNames(authorRoot, MAX_UPLOADS, "upload catalog");
+    static Entry publish(Path serverRoot, String author, String fileName,
+                         byte[] compressedNbt, long generation) throws IOException {
+        return publish(serverRoot, author, fileName, compressedNbt, generation, null);
     }
 
-    public static List<String> allUploads(MinecraftServer server) throws IOException {
-        Path root = uploadedRoot(serverRoot(server));
-        if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) return List.of();
-        List<Path> authorPaths = new ArrayList<>();
-        try (DirectoryStream<Path> authors = Files.newDirectoryStream(root)) {
-            int scanned = 0;
-            for (Path authorPath : authors) {
-                if (++scanned > MAX_DIRECTORY_SCAN) throw new IllegalStateException(
-                        "schematic upload root exceeds " + MAX_DIRECTORY_SCAN + " directory entries");
-                if (!Files.isDirectory(authorPath, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(authorPath)) continue;
-                String author = authorPath.getFileName().toString();
-                try { PrestigeContracts.validateAuthor(author); }
-                catch (IllegalArgumentException ignored) { continue; }
-                if (authorPaths.size() >= MAX_AUTHORS) throw new IllegalStateException(
-                        "schematic author catalog exceeds " + MAX_AUTHORS + " directories");
-                authorPaths.add(authorPath);
-            }
-        }
-        authorPaths.sort(Comparator.comparing(path -> path.getFileName().toString()));
-        List<String> result = new ArrayList<>();
-        for (Path authorPath : authorPaths) {
-            String author = authorPath.getFileName().toString();
-            int remaining = MAX_UPLOADS - result.size();
-            for (String name : uploadNames(authorPath, remaining, "upload catalog")) result.add(author + "/" + name);
-        }
-        return List.copyOf(result);
-    }
-
-    public static Entry publish(MinecraftServer server, String actingPlayer, boolean operator,
-                                String author, String fileName, long generation) throws IOException {
-        return publish(serverRoot(server), actingPlayer, operator, author, fileName, generation, server);
-    }
-
-    static Entry publish(Path serverRoot, String actingPlayer, boolean operator,
-                         String author, String fileName, long generation) throws IOException {
-        return publish(serverRoot, actingPlayer, operator, author, fileName, generation, null);
-    }
-
-    private static Entry publish(Path serverRoot, String actingPlayer, boolean operator,
-                                 String author, String fileName, long generation,
+    private static Entry publish(Path serverRoot, String author, String fileName,
+                                 byte[] compressedNbt, long generation,
                                  MinecraftServer server) throws IOException {
-        PrestigeContracts.validateAuthor(actingPlayer);
         PrestigeContracts.validateAuthor(author);
-        if (!operator && !actingPlayer.equals(author)) throw new IllegalArgumentException("players may publish only their own uploads");
         if (!safeFileName(fileName)) throw new IllegalArgumentException("unsafe schematic filename");
-        Path uploadRoot = uploadedRoot(serverRoot);
-        Path source = uploadRoot.resolve(author).resolve(fileName).normalize();
-        if (!source.startsWith(uploadRoot) || !Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS)
-                || Files.isSymbolicLink(source)) throw new IllegalArgumentException("schematic upload is not a regular server file");
-        long sourceSize = Files.size(source);
-        if (sourceSize < 2 || sourceSize > MAX_BYTES) throw new IllegalArgumentException("schematic is outside the size limit");
-        try (InputStream input = Files.newInputStream(source)) {
-            if (input.read() != 0x1f || input.read() != 0x8b) throw new IllegalArgumentException("schematic is not gzip encoded");
+        if (generation < 0) throw new IllegalArgumentException("schematic generation is negative");
+        if (compressedNbt == null || compressedNbt.length < 2 || compressedNbt.length > MAX_BYTES) {
+            throw new IllegalArgumentException("schematic is outside the size limit");
         }
-        byte[] sanitized = sanitize(source, server);
+        if ((compressedNbt[0] & 0xff) != 0x1f || (compressedNbt[1] & 0xff) != 0x8b) {
+            throw new IllegalArgumentException("schematic is not gzip encoded");
+        }
+        byte[] sanitized = sanitize(compressedNbt, server);
         long size = sanitized.length;
         String digest = sha256(sanitized);
         String id = digest.substring(0, 16) + "-" + author.toLowerCase(Locale.ROOT);
@@ -163,9 +118,9 @@ public final class SchematicLibrary {
         return entry;
     }
 
-    static byte[] sanitize(Path source, MinecraftServer server) throws IOException {
+    static byte[] sanitize(byte[] source, MinecraftServer server) throws IOException {
         CompoundTag input;
-        try (InputStream raw = Files.newInputStream(source);
+        try (InputStream raw = new ByteArrayInputStream(source);
              DataInputStream data = new DataInputStream(new BufferedInputStream(new GZIPInputStream(raw)))) {
             input = NbtIo.read(data, new NbtAccounter(MAX_DECOMPRESSED_BYTES));
         } catch (Exception error) {
@@ -311,24 +266,6 @@ public final class SchematicLibrary {
         return List.copyOf(result);
     }
 
-    private static List<String> uploadNames(Path authorRoot, int limit, String label) throws IOException {
-        List<String> result = new ArrayList<>();
-        try (DirectoryStream<Path> paths = Files.newDirectoryStream(authorRoot)) {
-            int scanned = 0;
-            for (Path path : paths) {
-                if (++scanned > MAX_DIRECTORY_SCAN) throw new IllegalStateException(
-                        label + " directory exceeds " + MAX_DIRECTORY_SCAN + " entries");
-                String name = path.getFileName().toString();
-                if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(path)
-                        || !safeFileName(name)) continue;
-                if (result.size() >= limit) throw new IllegalStateException(label + " exceeds " + MAX_UPLOADS + " entries");
-                result.add(name);
-            }
-        }
-        result.sort(String::compareTo);
-        return List.copyOf(result);
-    }
-
     private static int countPublishedEntryFiles(Path entries) throws IOException {
         int count = 0;
         try (DirectoryStream<Path> paths = Files.newDirectoryStream(entries)) {
@@ -407,7 +344,7 @@ public final class SchematicLibrary {
         return line.substring(prefix.length());
     }
 
-    private static boolean safeFileName(String name) {
+    static boolean safeFileName(String name) {
         return name != null && name.matches("[A-Za-z0-9._ -]{1,120}\\.nbt") && !name.equals(".nbt")
                 && !name.startsWith(".") && !name.contains("..") && !name.contains("/") && !name.contains("\\");
     }
@@ -416,7 +353,6 @@ public final class SchematicLibrary {
         return server.getServerDirectory().toPath().toAbsolutePath().normalize();
     }
 
-    private static Path uploadedRoot(Path serverRoot) { return serverRoot.resolve("schematics/uploaded").normalize(); }
     private static Path libraryRoot(Path serverRoot) { return serverRoot.resolve(".world_lifecycle_manager/schematics").normalize(); }
 
     private static String sha256(Path path) throws IOException {
