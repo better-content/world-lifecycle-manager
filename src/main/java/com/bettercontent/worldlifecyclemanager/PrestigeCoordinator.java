@@ -112,8 +112,8 @@ public final class PrestigeCoordinator {
                             try {
                                 PrestigeService.stage(context.getSource().getServer());
                                 PrestigeMod.LOGGER.info("Prestige CLI stage succeeded actor={}", context.getSource().getTextName());
-                                context.getSource().sendSuccess(() -> Component.literal("Staged prestige reset; commit with /world_lifecycle_manager commit "
-                                        + PrestigeService.worldName(context.getSource().getServer())), true);
+                                context.getSource().sendSuccess(() -> Component.literal(
+                                        "Staged prestige reset; commit with /world_lifecycle_manager commit"), true);
                                 return 1;
                             } catch (Exception error) {
                                 PrestigeMod.LOGGER.warn("Prestige CLI stage failed actor={}: {}",
@@ -133,10 +133,9 @@ public final class PrestigeCoordinator {
                     }
                 }))
                 .then(Commands.literal("commit").requires(source -> source.hasPermission(4))
-                        .then(Commands.argument("world-name", StringArgumentType.word()).executes(context -> {
+                        .executes(context -> {
                             try {
-                                String transaction = PrestigeService.commit(context.getSource().getServer(),
-                                        StringArgumentType.getString(context, "world-name"));
+                                String transaction = PrestigeService.commit(context.getSource().getServer());
                                 PrestigeMod.LOGGER.info("Prestige CLI commit succeeded actor={} transaction={}",
                                         context.getSource().getTextName(), transaction);
                                 context.getSource().sendSuccess(() -> Component.literal(
@@ -151,7 +150,7 @@ public final class PrestigeCoordinator {
                                 context.getSource().sendFailure(Component.literal("Prestige commit failed: " + error.getMessage()));
                                 return 0;
                             }
-                        })))
+                        }))
                 .then(Commands.literal("recovery").requires(source -> source.hasPermission(4))
                         .then(Commands.literal("cancel-staged").executes(context -> {
                             try {

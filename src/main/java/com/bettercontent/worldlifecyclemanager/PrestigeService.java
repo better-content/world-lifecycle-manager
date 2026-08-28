@@ -176,14 +176,14 @@ public final class PrestigeService {
         PrestigePerks.cancel(server);
     }
 
-    public static String commit(ServerPlayer player, BlockPos interfacePos, String confirmation) throws IOException {
+    public static String commit(ServerPlayer player, BlockPos interfacePos) throws IOException {
         requireOperator(player);
         requireCondenser(player, interfacePos);
-        return commit(player.server, confirmation);
+        return commit(player.server);
     }
 
-    public static String commit(MinecraftServer server, String confirmation) throws IOException {
-        if (!worldName(server).equals(confirmation)) throw new IllegalArgumentException("confirmation must exactly match the world name");
+    public static String commit(MinecraftServer server) throws IOException {
+        String currentWorld = worldName(server);
         Path resetPath = control(server).resolve("reset-request-v5.tsv");
         if (Files.exists(resetPath)) throw new IllegalStateException("reset already committed");
         Path stagedPath = control(server).resolve("staged-request-v5.tsv");
@@ -193,7 +193,7 @@ public final class PrestigeService {
         PrestigeContracts.Staged staged = PrestigeContracts.readStaged(stagedPath);
         PrestigeContracts.Lineage lineage = lineage(server);
         if (!staged.lineageId().equals(lineage.lineageId()) || staged.generation() != lineage.generation()
-                || !staged.worldName().equals(worldName(server))) {
+                || !staged.worldName().equals(currentWorld)) {
             throw new IllegalStateException("staged identity is stale");
         }
         String transaction = PrestigeContracts.newTransactionId();

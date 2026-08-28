@@ -148,7 +148,8 @@ public final class PrestigeNetwork {
                     case CANCEL -> PrestigeService.cancel(player);
                     case COMMIT -> {
                         requirePhysicalMenu(player, menu);
-                        String tx = PrestigeService.commit(player, packet.pos, packet.value);
+                        if (!packet.value.isEmpty()) throw new IllegalArgumentException("commit does not accept a world name");
+                        String tx = PrestigeService.commit(player, packet.pos);
                         player.server.getPlayerList().broadcastSystemMessage(Component.literal(
                                 "World Condenser committed " + tx + " by " + player.getGameProfile().getName()
                                         + "; all world and player state will be archived and reset."), false);

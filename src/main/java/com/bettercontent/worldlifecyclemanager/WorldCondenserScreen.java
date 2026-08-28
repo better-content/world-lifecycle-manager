@@ -2,7 +2,6 @@ package com.bettercontent.worldlifecyclemanager;
 
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.BlockPos;
@@ -32,7 +31,6 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
     private int uploadIndex;
     private int publishedIndex;
     private int perkScroll = GRAPH_SCROLL_MAX;
-    private EditBox confirmation;
 
     public WorldCondenserScreen(WorldCondenserMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title);
@@ -124,13 +122,9 @@ public final class WorldCondenserScreen extends AbstractContainerScreen<WorldCon
                     .bounds(x + actionWidth + 6, y, actionWidth, 20).build();
             cancel.active = state.status().equals("staged");
             addRenderableWidget(cancel);
-            int confirmationX = x + actionWidth * 2 + 12;
-            confirmation = new EditBox(font, confirmationX, y, Math.max(1, x + width - confirmationX), 20, Component.literal("World name"));
-            confirmation.setHint(Component.literal(state.worldName()));
-            addRenderableWidget(confirmation);
             y += rowGap;
             Button commit = Button.builder(Component.literal("COMMIT PERMANENT RESET"), button ->
-                    PrestigeNetwork.sendAction(PrestigeNetwork.Action.COMMIT, actionPos(), confirmation.getValue()))
+                    PrestigeNetwork.sendAction(PrestigeNetwork.Action.COMMIT, actionPos(), ""))
                 .bounds(x, y, width, 20).build();
             commit.active = !menu.remote() && state.status().equals("staged");
             addRenderableWidget(commit);
