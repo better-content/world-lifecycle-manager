@@ -24,18 +24,42 @@ public final class PrestigeService {
 
     private PrestigeService() {}
 
+    /** True only where the external supervisor can complete a Prestige transaction. */
+    public static boolean supportsPrestigeReset(MinecraftServer server) {
+        return server.isDedicatedServer();
+    }
+
+    static void requirePrestigeReset(MinecraftServer server) {
+        if (!supportsPrestigeReset(server)) {
+            throw new IllegalStateException("Prestige is disabled in single-player; use a supervised dedicated server");
+        }
+    }
+
     public static Path state(MinecraftServer server) {
         return server.getServerDirectory().toPath().toAbsolutePath().normalize().resolve(".world_lifecycle_manager");
     }
 
     public static Path control(MinecraftServer server) { return state(server).resolve("control"); }
-    public static Path lineagePath(MinecraftServer server) { return state(server).resolve("lineage-v5.tsv"); }
+    public static Path lineagePath(MinecraftServer server) throws IOException {
+        return lineageContext(server).stateRoot().resolve("lineage-v5.tsv");
+    }
 
     public static PrestigeContracts.Lineage lineage(MinecraftServer server) throws IOException {
+        return lineageContext(server).lineage();
+    }
+
+    public static Path lineagePlayerState(MinecraftServer server) throws IOException {
+        return lineageContext(server).stateRoot();
+    }
+
+    private static SingleplayerLineageStore.Context lineageContext(MinecraftServer server) throws IOException {
+        if (!supportsPrestigeReset(server)) {
+            return SingleplayerLineageStore.open(state(server), server.getWorldPath(LevelResource.ROOT));
+        }
         if (Files.exists(server.getServerDirectory().toPath().toAbsolutePath().normalize().resolve(".prestige"))) {
             throw new IllegalStateException("legacy .prestige state is unsupported; move or remove it before starting");
         }
-        Path v5 = lineagePath(server);
+        Path v5 = state(server).resolve("lineage-v5.tsv");
         if (!Files.isRegularFile(v5)) {
             if (Files.exists(state(server).resolve("lineage-v1.tsv")) || Files.exists(state(server).resolve("lineage-v2.tsv"))
                     || Files.exists(state(server).resolve("lineage-v3.tsv")) || Files.exists(state(server).resolve("lineage-v4.tsv"))) {
@@ -56,14 +80,17 @@ public final class PrestigeService {
         if (Files.exists(server.getWorldPath(LevelResource.ROOT).resolve("data/world_lifecycle_manager/reset-binding-v4.tsv"))) {
             throw new IllegalStateException("Prestige v4 world binding is unsupported; archive the old world and start a new lineage");
         }
-        return PrestigeContracts.readLineage(v5);
+        PrestigeContracts.Lineage lineage = PrestigeContracts.readLineage(v5);
+        return new SingleplayerLineageStore.Context(state(server), lineage);
     }
 
     public static List<String> allowedBiomes(MinecraftServer server) throws IOException {
+        requirePrestigeReset(server);
         return allowedBiomes(server, PrestigePerks.draft(server));
     }
 
     public static List<String> allowedBiomes(MinecraftServer server, PrestigePerks.Build build) throws IOException {
+        requirePrestigeReset(server);
         List<String> values = PrestigePerks.allowedBiomes(server, build);
         if (values.isEmpty()) throw new IllegalStateException("prestige biome allowlist is empty");
         for (String value : values) {
@@ -78,6 +105,7 @@ public final class PrestigeService {
 
     public static View view(ServerPlayer player, boolean includeSchematics) throws IOException {
         MinecraftServer server = player.server;
+        requirePrestigeReset(server);
         PrestigeContracts.Lineage lineage = lineage(server);
         String currentWorld = worldName(server);
         RecoveryDiagnostic recovery = diagnoseRecovery(server, lineage, currentWorld);
@@ -166,6 +194,7 @@ public final class PrestigeService {
     }
 
     public static RecoveryDiagnostic diagnoseRecovery(MinecraftServer server) {
+        if (!supportsPrestigeReset(server)) return new RecoveryDiagnostic(Recovery.NONE, "");
         try {
             return diagnoseRecovery(server, lineage(server), worldName(server));
         } catch (Exception error) {
@@ -210,6 +239,7 @@ public final class PrestigeService {
     }
 
     public static void recoverInvalid(ServerPlayer player, BlockPos interfacePos) throws IOException {
+        requirePrestigeReset(player.server);
         requireOperator(player);
         requireCondenser(player, interfacePos);
         MinecraftServer server = player.server;
@@ -236,6 +266,7 @@ public final class PrestigeService {
     }
 
     public static void saveDraft(MinecraftServer server, List<String> biomes, String author) throws IOException {
+        requirePrestigeReset(server);
         if (Files.exists(control(server).resolve("staged-request-v5.tsv"))
                 || Files.exists(control(server).resolve("reset-request-v5.tsv"))) {
             throw new IllegalStateException("prestige selection is locked");
@@ -250,6 +281,7 @@ public final class PrestigeService {
     }
 
     public static void setBiomeSlot(ServerPlayer player, int slot, String value) throws IOException {
+        requirePrestigeReset(player.server);
         requireOperator(player);
         if (slot < 0 || slot > 2) throw new IllegalArgumentException("biome preference slot is outside 1..3");
         List<String> current = new java.util.ArrayList<>(PrestigePerks.draft(player.server).biomes());
@@ -274,6 +306,7 @@ public final class PrestigeService {
     }
 
     public static void stage(MinecraftServer server) throws IOException {
+        requirePrestigeReset(server);
         if (Files.exists(control(server).resolve("reset-request-v5.tsv"))) throw new IllegalStateException("reset already committed");
         Path draftPath = control(server).resolve("draft-v5.tsv");
         if (!Files.isRegularFile(draftPath)) {
@@ -297,6 +330,7 @@ public final class PrestigeService {
     }
 
     public static void cancel(MinecraftServer server) throws IOException {
+        requirePrestigeReset(server);
         if (Files.exists(control(server).resolve("reset-request-v5.tsv"))) throw new IllegalStateException("committed reset cannot be cancelled in-game");
         Files.deleteIfExists(control(server).resolve("staged-request-v5.tsv"));
         PrestigePerks.cancel(server);
@@ -309,6 +343,7 @@ public final class PrestigeService {
     }
 
     public static String commit(MinecraftServer server) throws IOException {
+        requirePrestigeReset(server);
         String currentWorld = worldName(server);
         Path resetPath = control(server).resolve("reset-request-v5.tsv");
         if (Files.exists(resetPath)) throw new IllegalStateException("reset already committed");
@@ -338,6 +373,7 @@ public final class PrestigeService {
     }
 
     public static SchematicLibrary.Entry publish(ServerPlayer player, String fileName, byte[] compressedNbt) throws IOException {
+        requirePrestigeReset(player.server);
         requireOperator(player);
         String author = player.getGameProfile().getName();
         long generation = lineage(player.server).generation();
@@ -349,6 +385,7 @@ public final class PrestigeService {
     }
 
     public static void remove(ServerPlayer player, String id) throws IOException {
+        requirePrestigeReset(player.server);
         requireOperator(player);
         SchematicLibrary.remove(player.server, id);
     }

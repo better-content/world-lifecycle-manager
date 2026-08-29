@@ -49,6 +49,11 @@ public final class WorldCondenserInterfaceBlock extends BaseEntityBlock {
                                            InteractionHand hand, BlockHitResult hit) {
         if (!(level.getBlockEntity(pos) instanceof WorldCondenserBlockEntity condenser)) return InteractionResult.PASS;
         if (!level.isClientSide && player instanceof ServerPlayer serverPlayer) {
+            if (!PrestigeService.supportsPrestigeReset(serverPlayer.server)) {
+                serverPlayer.displayClientMessage(Component.translatable(
+                        "message.world_lifecycle_manager.condenser_dedicated_only"), true);
+                return InteractionResult.CONSUME;
+            }
             if (!serverPlayer.hasPermissions(4)) {
                 PrestigeMod.LOGGER.warn("World Condenser access denied for non-operator {} at {}", serverPlayer.getScoreboardName(), pos);
                 serverPlayer.displayClientMessage(Component.translatable("message.world_lifecycle_manager.condenser_operator_required"), true);

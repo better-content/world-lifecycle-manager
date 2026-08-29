@@ -7,5 +7,6 @@
   "screen.world_lifecycle_manager.clear": "Clear",
   "screen.world_lifecycle_manager.clear_all": "All",
   "screen.world_lifecycle_manager.ghost_hint": "Carry a replacement block and click to assign it; click empty-handed to clear.",
-  "message.world_lifecycle_manager.condenser_operator_required": "Only a server operator can use the World Condenser."
+  "message.world_lifecycle_manager.condenser_operator_required": "Only a server operator can use the World Condenser.",
+  "message.world_lifecycle_manager.condenser_dedicated_only": "Prestige is currently available only on a supervised dedicated server."
 }

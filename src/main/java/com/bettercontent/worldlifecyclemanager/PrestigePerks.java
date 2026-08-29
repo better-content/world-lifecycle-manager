@@ -105,6 +105,9 @@ public final class PrestigePerks {
     public static Path healthPath(MinecraftServer server) { return PrestigeService.control(server).resolve("perk-health-v3.tsv"); }
 
     public static OnboardingPolicy activeOnboardingPolicy(MinecraftServer server) throws IOException {
+        if (!PrestigeService.supportsPrestigeReset(server)) {
+            return onboardingPolicy(EnumSet.noneOf(Perk.class));
+        }
         PrestigeContracts.Lineage lineage = PrestigeService.lineage(server);
         EnumSet<Perk> active = readActive(server, lineage);
         return onboardingPolicy(active);
@@ -115,6 +118,7 @@ public final class PrestigePerks {
     }
 
     public static Build draft(MinecraftServer server) throws IOException {
+        PrestigeService.requirePrestigeReset(server);
         PrestigeContracts.Lineage lineage = PrestigeService.lineage(server);
         Path path = draftPath(server);
         if (Files.isRegularFile(path)) return readBuild(path, DRAFT_MAGIC, lineage, lineage.generation(), false);
@@ -122,15 +126,18 @@ public final class PrestigePerks {
     }
 
     public static Build staged(MinecraftServer server) throws IOException {
+        PrestigeService.requirePrestigeReset(server);
         PrestigeContracts.Lineage lineage = PrestigeService.lineage(server);
         return readBuild(stagedPath(server), STAGED_MAGIC, lineage, lineage.generation(), false);
     }
 
     public static Build reset(MinecraftServer server, PrestigeContracts.Successor successor) throws IOException {
+        PrestigeService.requirePrestigeReset(server);
         return reset(server, successor.lineageId(), successor.baseGeneration(), successor.transactionId(), successor.biomes());
     }
 
     public static Build reset(MinecraftServer server, PrestigeContracts.Reset reset) throws IOException {
+        PrestigeService.requirePrestigeReset(server);
         return reset(server, reset.lineageId(), reset.baseGeneration(), reset.transactionId(), reset.biomes());
     }
 
@@ -193,7 +200,10 @@ public final class PrestigePerks {
         if (!build.biomes().equals(biomes)) build = new Build(build.lineageId(), build.baseGeneration(), build.perks(), biomes);
         validateBuild(server, build); writeBuild(stagedPath(server), STAGED_MAGIC, build, null);
     }
-    public static void cancel(MinecraftServer server) throws IOException { Files.deleteIfExists(stagedPath(server)); }
+    public static void cancel(MinecraftServer server) throws IOException {
+        PrestigeService.requirePrestigeReset(server);
+        Files.deleteIfExists(stagedPath(server));
+    }
     public static void commit(MinecraftServer server, String transaction, List<String> biomes) throws IOException {
         Build build = staged(server);
         if (!build.biomes().equals(biomes)) throw new IllegalStateException("staged biome preferences changed");
@@ -202,6 +212,7 @@ public final class PrestigePerks {
 
     public static void writeHealth(MinecraftServer server, PrestigeContracts.Successor successor, Build build,
                                    String resolvedBiome, BlockPos spawn) throws IOException {
+        PrestigeService.requirePrestigeReset(server);
         if (!build.biomes().equals(successor.biomes())) throw new IllegalArgumentException("perk health preferences do not match successor");
         if (!resolvedBiome.equals("-") && !successor.biomes().contains(resolvedBiome)) {
             throw new IllegalArgumentException("perk health resolved biome is not requested");
@@ -214,6 +225,7 @@ public final class PrestigePerks {
     }
 
     public static List<String> allowedBiomes(MinecraftServer server, Build build) throws IOException {
+        PrestigeService.requirePrestigeReset(server);
         return new ArrayList<>(readBiomeFile(server, "world_lifecycle_manager-biomes.txt")).stream().distinct().sorted().toList();
     }
 

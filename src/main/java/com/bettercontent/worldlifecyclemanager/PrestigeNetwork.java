@@ -58,6 +58,7 @@ public final class PrestigeNetwork {
     }
     public static void requestAutomaticSync(List<String> ids) { CHANNEL.sendToServer(new SyncRequestPacket(ids)); }
     public static void sendManifest(ServerPlayer player) {
+        if (!PrestigeService.supportsPrestigeReset(player.server)) return;
         try {
             List<ClientEntry> entries = SchematicLibrary.list(player.server).stream().map(entry -> new ClientEntry(
                     entry.id(), entry.author(), entry.originalName(), entry.size(), entry.sha256())).toList();
@@ -66,6 +67,10 @@ public final class PrestigeNetwork {
     }
     public static void cancelSync(ServerPlayer player) { SYNC_QUEUES.remove(player.getUUID()); }
     public static void tickSync(net.minecraft.server.MinecraftServer server) {
+        if (!PrestigeService.supportsPrestigeReset(server)) {
+            SYNC_QUEUES.clear();
+            return;
+        }
         for (var iterator = SYNC_QUEUES.entrySet().iterator(); iterator.hasNext();) {
             var queued = iterator.next();
             ServerPlayer player = server.getPlayerList().getPlayer(queued.getKey());
@@ -138,6 +143,10 @@ public final class PrestigeNetwork {
             context.setPacketHandled(true);
             ServerPlayer player = context.getSender();
             if (player == null || !(player.containerMenu instanceof WorldCondenserMenu menu) || !menu.pos().equals(packet.pos)) return;
+            if (!PrestigeService.supportsPrestigeReset(player.server)) {
+                player.displayClientMessage(Component.literal("Prestige is disabled in single-player."), false);
+                return;
+            }
             try {
                 switch (packet.action) {
                     case REFRESH_RESET -> sendState(player, ViewKind.RESET, true);
@@ -230,6 +239,10 @@ public final class PrestigeNetwork {
             ServerPlayer player = context.getSender();
             if (player == null || !(player.containerMenu instanceof WorldCondenserMenu menu)
                     || !menu.pos().equals(packet.pos)) return;
+            if (!PrestigeService.supportsPrestigeReset(player.server)) {
+                player.displayClientMessage(Component.literal("Prestige is disabled in single-player."), false);
+                return;
+            }
             try {
                 SchematicLibrary.Entry entry = PrestigeService.publish(player, packet.name, packet.compressedNbt);
                 PrestigeMod.LOGGER.info("World Condenser schematic publication succeeded actor={} name={} id={} pos={}",
@@ -329,6 +342,7 @@ public final class PrestigeNetwork {
         static SyncRequestPacket decode(FriendlyByteBuf buffer) { return new SyncRequestPacket(readBounded(buffer, SchematicLibrary.MAX_PUBLISHED, in -> in.readUtf(64))); }
         static void handle(SyncRequestPacket packet, Supplier<NetworkEvent.Context> supplier) {
             NetworkEvent.Context context = supplier.get(); context.setPacketHandled(true); ServerPlayer player = context.getSender(); if (player == null) return;
+            if (!PrestigeService.supportsPrestigeReset(player.server)) return;
             HashSet<String> requested = new HashSet<>(packet.ids);
             ArrayDeque<SchematicLibrary.Entry> queue = new ArrayDeque<>();
             try { SchematicLibrary.list(player.server).stream().filter(entry -> requested.contains(entry.id())).forEach(queue::add); }

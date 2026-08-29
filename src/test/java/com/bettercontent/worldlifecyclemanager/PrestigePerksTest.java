@@ -61,6 +61,8 @@ final class PrestigePerksTest {
     }
 
     @Test void onboardingMilestonesAreExact() {
+        assertEquals(PrestigePerks.OnboardingMode.SPAWN_ONLY,
+                PrestigePerks.onboardingPolicy(EnumSet.noneOf(PrestigePerks.Perk.class)).mode());
         var spawn = PrestigePerks.onboardingPolicy(EnumSet.of(PrestigePerks.Perk.BIOME_SELECTION));
         assertEquals(PrestigePerks.OnboardingMode.SPAWN_ONLY, spawn.mode());
         EnumSet<PrestigePerks.Perk> paid = EnumSet.of(PrestigePerks.Perk.BIOME_SELECTION,

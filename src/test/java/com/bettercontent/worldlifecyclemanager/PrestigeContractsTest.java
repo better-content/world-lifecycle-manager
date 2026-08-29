@@ -15,6 +15,10 @@ class PrestigeContractsTest {
         var lineage = new PrestigeContracts.Lineage("lineage-abc", 3, 3);
         PrestigeContracts.writeLineage(lineagePath, lineage);
         assertEquals(lineage, PrestigeContracts.readLineage(lineagePath));
+        var singleplayer = new PrestigeContracts.SingleplayerBinding("lineage-abc", 3);
+        Path singleplayerPath = temp.resolve("singleplayer-lineage-v1.tsv");
+        PrestigeContracts.writeSingleplayerBinding(singleplayerPath, singleplayer);
+        assertEquals(singleplayer, PrestigeContracts.readSingleplayerBinding(singleplayerPath));
         var staged = new PrestigeContracts.Staged("lineage-abc", 3,
                 List.of("minecraft:plains", "minecraft:forest", "minecraft:meadow"), "Builder", "world");
         Path stagedPath = temp.resolve("control/staged-request-v5.tsv");
@@ -67,6 +71,11 @@ class PrestigeContractsTest {
         Path old = temp.resolve("old-v4.tsv");
         Files.writeString(old, "BC_PRESTIGE_LINEAGE_V4\nlineage\tlineage-abc\ntotal_prestiges\t0\ngeneration\t0\n");
         assertThrows(IllegalArgumentException.class, () -> PrestigeContracts.readLineage(old));
+    }
+
+    @Test void singleplayerBindingRejectsNegativeGeneration() {
+        assertThrows(IllegalArgumentException.class, () -> PrestigeContracts.writeSingleplayerBinding(
+                temp.resolve("binding.tsv"), new PrestigeContracts.SingleplayerBinding("lineage-abc", -1)));
     }
 
     @Test void cliBiomeArgumentsPreservePreferenceOrder() {

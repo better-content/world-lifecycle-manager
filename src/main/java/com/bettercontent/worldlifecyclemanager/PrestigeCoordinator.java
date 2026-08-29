@@ -39,7 +39,8 @@ public final class PrestigeCoordinator {
     public static void scheduleStop() { stopCountdown = 20; }
 
     @SubscribeEvent public static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
-        if (event.getEntity() instanceof ServerPlayer player) PrestigeNetwork.sendManifest(player);
+        if (event.getEntity() instanceof ServerPlayer player
+                && PrestigeService.supportsPrestigeReset(player.server)) PrestigeNetwork.sendManifest(player);
     }
     @SubscribeEvent public static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) PrestigeNetwork.cancelSync(player);
@@ -47,6 +48,7 @@ public final class PrestigeCoordinator {
 
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
+        if (event.getCommandSelection() == Commands.CommandSelection.INTEGRATED) return;
         event.getDispatcher().register(Commands.literal("world_lifecycle_manager")
                 .then(Commands.literal("status").executes(context -> {
                     try {
@@ -182,6 +184,7 @@ public final class PrestigeCoordinator {
     @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
         MinecraftServer server = event.getServer();
+        if (!PrestigeService.supportsPrestigeReset(server)) return;
         PrestigeNetwork.tickSync(server);
         Path successorPath = PrestigeService.control(server).resolve("successor-request-v5.tsv");
         if (!Files.isRegularFile(successorPath)) return;
@@ -306,6 +309,7 @@ public final class PrestigeCoordinator {
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         MinecraftServer server = event.getServer();
+        if (!PrestigeService.supportsPrestigeReset(server)) return;
         if (stopCountdown >= 0 && --stopCountdown <= 0) {
             stopCountdown = -1;
             server.halt(false);

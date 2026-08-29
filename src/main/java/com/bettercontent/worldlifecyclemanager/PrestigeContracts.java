@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-/** Closed, ordered contracts shared with the dedicated prestige supervisor. */
+/** Closed, ordered lifecycle and lineage-binding contracts. */
 public final class PrestigeContracts {
     public static final String LINEAGE_MAGIC = "BC_PRESTIGE_LINEAGE_V5";
     public static final String DRAFT_MAGIC = "BC_PRESTIGE_DRAFT_V5";
@@ -26,6 +26,7 @@ public final class PrestigeContracts {
     public static final String SHUTDOWN_MAGIC = "BC_PRESTIGE_SHUTDOWN_V5";
     public static final String WORLD_BINDING_MAGIC = "BC_PRESTIGE_WORLD_BINDING_V5";
     public static final String ACTIVE_SUCCESSOR_MAGIC = "BC_PRESTIGE_ACTIVE_SUCCESSOR_V2";
+    public static final String SINGLEPLAYER_BINDING_MAGIC = "BC_SP_LINEAGE_BINDING_V1";
 
     private static final Pattern ID = Pattern.compile("[a-z0-9][a-z0-9_-]{0,63}");
     private static final Pattern WORLD = Pattern.compile("[A-Za-z0-9._-]{1,128}");
@@ -53,6 +54,11 @@ public final class PrestigeContracts {
         public WorldBinding { biomes = List.copyOf(biomes); }
     }
     public record ActiveSuccessor(long pid, long startTicks, String lineageId, String transactionId, int attempt) {}
+    public record SingleplayerBinding(String lineageId, long generation) {}
+
+    public static String newLineageId() {
+        return "lineage-" + UUID.randomUUID().toString().replace("-", "");
+    }
 
     public static String newTransactionId() {
         return "transaction-" + UUID.randomUUID().toString().replace("-", "");
@@ -183,6 +189,13 @@ public final class PrestigeContracts {
         return new ActiveSuccessor(pid, startTicks, lineage, transaction, (int) attempt);
     }
 
+    public static SingleplayerBinding readSingleplayerBinding(Path path) throws IOException {
+        Map<String, String> fields = read(path, SINGLEPLAYER_BINDING_MAGIC, List.of("lineage", "generation"));
+        String lineage = fields.get("lineage");
+        validateId("lineage ID", lineage);
+        return new SingleplayerBinding(lineage, parseNonNegativeLong("generation", fields.get("generation")));
+    }
+
     public static void writeLineage(Path path, Lineage lineage) throws IOException {
         validateId("lineage ID", lineage.lineageId());
         if (lineage.totalPrestiges() < 0 || lineage.generation() < 0
@@ -246,6 +259,13 @@ public final class PrestigeContracts {
                 "world\t" + binding.worldName(), "old_seed\t" + binding.oldSeed(),
                 "biome_1\t" + encodeBiome(binding.biomes(), 0), "biome_2\t" + encodeBiome(binding.biomes(), 1),
                 "biome_3\t" + encodeBiome(binding.biomes(), 2)));
+    }
+
+    public static void writeSingleplayerBinding(Path path, SingleplayerBinding binding) throws IOException {
+        validateId("lineage ID", binding.lineageId());
+        if (binding.generation() < 0) throw new IllegalArgumentException("generation is negative");
+        writeAtomic(path, List.of(SINGLEPLAYER_BINDING_MAGIC,
+                "lineage\t" + binding.lineageId(), "generation\t" + binding.generation()));
     }
 
     public static void writeHealth(Path path, Successor successor, long actualSeed, String resolvedBiome, String actualBiome,

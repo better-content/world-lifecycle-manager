@@ -2,6 +2,8 @@
 
 World Lifecycle Manager is the Better Content Forge 1.20.1 mod for verified dedicated-server world resets, cold archives, rollback, World Condenser control, and the persistent lineage schematic library.
 
+Single-player worlds receive a durable lineage identity and namespaced player-lineage storage so a future successor can inherit collected history. Prestige resets, perks, lineage schematics, World Condenser operation, and lifecycle commands remain disabled on integrated servers; single-player onboarding uses the generation-zero spawn-only policy. Unrelated newly created saves receive distinct lineage identities, while copied saves retain their binding.
+
 Operators publish lineage schematics directly from the World Condenser's Schematics tab. Save a structure with Create's Schematic and Quill so its `.nbt` file appears under `.minecraft/schematics`, open the tab, select the local file, and click Publish. The server derives the author from the operator's player profile and sanitizes the schematic before publication. Downloads are written back to Create's top-level schematic folder and appear in Create's normal schematic list.
 
 The World Condenser also exposes a six-node, operator-controlled world-shaping perk tree. Each upcoming prestige supplies one point. Operators may respec before staging, while the staged build is transactionally bound to the successor and only becomes active after verified lineage advancement. Perks expand biome choices, improve or redirect spawn placement, add a fallback biome, and optionally authorize a fourth successor attempt; they never grant player inventory or disable lineage schematics.
